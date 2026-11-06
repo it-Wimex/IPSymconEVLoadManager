@@ -91,6 +91,7 @@ check('Lastverlauf: ganzer Tag', [$c['len'], $c['upto']], [1440, 1440]);
 check('Lastverlauf: je Ladepunkt Leistung zur Spitze', array_column($c['lanes'], 'atPeak'), [7.0, 6.8]);
 check('Lastverlauf: je Ladepunkt höchste Leistung', array_column($c['lanes'], 'peak'), [7.0, 6.9]);
 check('Lastverlauf: je Ladepunkt Energie am Tag', array_column($c['lanes'], 'kwh'), [10.0, 5.0]);
+check('Lastverlauf: Status je Ladepunkt (8–10 lädt, 10–12 steckt nur, zweiter Punkt ohne Belegt-Daten frei)', array_column($c['lanes'], 'st'), [[[480, 600, 2], [600, 720, 1]], []]);
 check('Lastverlauf: Navigation', [$c['prev'], $c['next']], [mktime(0, 0, 0, 10, 1, 2026), mktime(0, 0, 0, 10, 3, 2026)]);
 
 $ca = EVReport::Day($meta, $r, 'all', $d2, $now);
@@ -99,6 +100,11 @@ check('Lastverlauf Alle: Summe ohne gemeinsames Budget', [$ca['limitKw'], $ca['s
 check('Lastverlauf Alle: Standort mit eigenem Budget und Zeiten am Budget', [$ca['lanes'][0]['limitKw'], $ca['lanes'][0]['segs'], $ca['lanes'][0]['limitMin']], [13.8, [[554, 605], [900, 910]], 61]);
 check('Lastverlauf Alle: Standort ohne Spitze', [$ca['lanes'][1]['limitKw'], $ca['lanes'][1]['limitMin'], $ca['lanes'][1]['drill']], [22.1, 0, 'site:RGST']);
 check('Lastverlauf Alle: Energie je Standort', array_column($ca['lanes'], 'kwh'), [15.0, 0.0]);
+check('Lastverlauf Alle: Status je Standort = höchster Status seiner Ladepunkte', $ca['lanes'][0]['st'], [[480, 600, 2], [600, 720, 1]]);
+check('Lastverlauf Alle: Anzahl ladend / nur angesteckt je Minute', [$ca['lanes'][0]['occ'], $ca['lanes'][0]['n']], [[[0, 0, 0], [480, 1, 0], [600, 0, 1], [720, 0, 0]], 2]);
+$noL = $meta;
+unset($noL['ADF']['saeulen'][0]['points'][0]['varL']);
+check('Lastverlauf: ohne „lädt aktiv“ zählt belegt mit Leistung', EVReport::Day($noL, $r, 'site:ADF', $d2, $now)['lanes'][0]['st'], [[480, 720, 2]]);
 
 $first = EVReport::Day($meta, $r, 'site:ADF', mktime(0, 0, 0, 9, 1, 2026), $now);
 check('Lastverlauf: vor Beginn der Aufzeichnung wird der erste Tag gezeigt', [$first['day'], $first['prev']], [mktime(0, 0, 0, 10, 1, 2026), null]);

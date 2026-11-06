@@ -27,6 +27,9 @@ foreach (EVPeriod::TYPES as $type) {
         }
     }
 }
+// Nur für die Tagesansicht: rechter Ladepunkt am 2.10. steckt 9–16 Uhr, lädt 9.14–10.05 und 15.00–15.10 Uhr
+$r->logs[202] = $steps([[$hm(9, 0), true], [$hm(16, 0), false]]);
+$r->logs[252] = $steps([[$hm(9, 14), true], [$hm(10, 5), false], [$hm(15, 0), true], [$hm(15, 10), false]]);
 $days = [];
 foreach (['all', 'site:ADF', 'saeule:ADF:ADF-LS01', 'site:RGST', 'saeule:RGST:RGST-LS01'] as $sc) {
     for ($d = mktime(0, 0, 0, 10, 1, 2026); $d <= EVPeriod::Day0($now); $d = EVPeriod::AddDays($d, 1)) {

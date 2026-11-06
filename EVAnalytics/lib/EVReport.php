@@ -490,7 +490,9 @@ final class EVReport
      * Lastverlauf eines Tages. Oben die Summe (Höchstwert je Minute) mit Limit und Zeiten am Limit, darunter
      * eine Zeile je Ladepunkt (Standort oder Säule gewählt, gleiche Skala) bzw. je Standort (alle Standorte,
      * jeder mit eigenem Budget und eigenen Zeiten am Budget). Minuten zählen ab Tagesbeginn, Reihen kommen
-     * als Wechselliste [[Minute, kW], …] mit 0,1 kW Auflösung.
+     * als Wechselliste [[Minute, kW], …] mit 0,1 kW Auflösung. Dazu je Zeile der Status als Abschnitte
+     * [[von, bis, 1|2]] (1 = angesteckt ohne Laden, 2 = lädt, frei fehlt); je Standort zählt der höchste Status
+     * seiner Ladepunkte, „occ“ nennt dort je Minute die Anzahl ladend und nur angesteckt.
      */
     public static function Day(array $meta, $reader, string $scopeStr, int $day, int $now): ?array
     {
@@ -526,6 +528,52 @@ final class EVReport
                 $out[] = $v;
             }
             return $out;
+        };
+        // Ja/Nein-Variable als Stand am Ende jeder Minute
+        $flags = function (int $var) use ($reader, $d0, $end, $upto) {
+            if ($var <= 0) {
+                return array_fill(0, $upto, false);
+            }
+            $v = $reader->StateBefore($var, $d0);
+            $rows = $reader->Logged($var, $d0, $end);
+            $n = count($rows);
+            $k = 0;
+            $out = [];
+            for ($i = 0; $i < $upto; $i++) {
+                $lim = $d0 + ($i + 1) * 60;
+                while ($k < $n && (int) $rows[$k]['TimeStamp'] < $lim) {
+                    $v = (bool) $rows[$k]['Value'];
+                    $k++;
+                }
+                $out[] = $v;
+            }
+            return $out;
+        };
+        // Status je Minute: 0 frei, 1 angesteckt ohne Laden, 2 lädt (ohne „lädt aktiv“-Variable: belegt und ab 0,1 kW)
+        $status = function (array $p, array $kw) use ($flags, $upto) {
+            $b = $flags((int) ($p['varB'] ?? 0));
+            $l = empty($p['varL']) ? null : $flags((int) $p['varL']);
+            $out = [];
+            for ($i = 0; $i < $upto; $i++) {
+                $ch = $l === null ? ($b[$i] && ($kw[$i] ?? 0) >= EVStats::LADEN_KW) : $l[$i];
+                $out[] = $ch ? 2 : ($b[$i] ? 1 : 0);
+            }
+            return $out;
+        };
+        $runs = function (array $st) {
+            $o = [];
+            $n = count($st);
+            for ($i = 0; $i < $n;) {
+                $j = $i;
+                while ($j < $n && $st[$j] === $st[$i]) {
+                    $j++;
+                }
+                if ($st[$i] > 0) {
+                    $o[] = [$i, $j, $st[$i]];
+                }
+                $i = $j;
+            }
+            return $o;
         };
         // Zeiten am Limit wie in der Auswertung des Zeitraums: Minuten ab 98,5 %, Lücken bis 2 Minuten überbrückt
         $segsOf = function (array $m, ?float $limitKw) {
@@ -584,8 +632,27 @@ final class EVReport
                 $m = $minutes((int) ($site['varP'] ?? 0));
                 $lim = isset($site['budgetKw']) ? (float) $site['budgetKw'] : null;
                 [$sg, $lm] = $segsOf($m, $lim);
+                $st = array_fill(0, $upto, 0);
+                $cl = array_fill(0, $upto, 0);
+                $cb = array_fill(0, $upto, 0);
+                foreach ($pts as $p) {
+                    foreach ($status($p, $minutes((int) ($p['varP'] ?? 0))) as $i => $x) {
+                        $st[$i] = max($st[$i], $x);
+                        $cl[$i] += $x === 2 ? 1 : 0;
+                        $cb[$i] += $x === 1 ? 1 : 0;
+                    }
+                }
+                $occ = [];
+                $last = null;
+                for ($i = 0; $i < $upto; $i++) {
+                    if ($last !== [$cl[$i], $cb[$i]]) {
+                        $last = [$cl[$i], $cb[$i]];
+                        $occ[] = [$i, $cl[$i], $cb[$i]];
+                    }
+                }
                 $lanes[] = ['id' => (string) $sk, 'name' => (string) ($site['name'] ?? $sk), 'slot' => $slot < self::SERIES ? $slot : null, 'm' => $m,
-                    'kwh' => $kwh($pts), 'limitKw' => $lim, 'segs' => $sg, 'limitMin' => $lm, 'drill' => 'site:' . $sk];
+                    'kwh' => $kwh($pts), 'limitKw' => $lim, 'segs' => $sg, 'limitMin' => $lm, 'drill' => 'site:' . $sk,
+                    'st' => $runs($st), 'occ' => $occ, 'n' => count($pts)];
             }
             $tot = array_fill(0, $upto, 0.0);
             foreach ($lanes as $l) {
@@ -605,8 +672,9 @@ final class EVReport
                     if ($sa && $s2['id'] !== $sa['id']) {
                         continue;
                     }
+                    $m = $minutes((int) ($p['varP'] ?? 0));
                     $lanes[] = ['id' => (string) $p['id'], 'name' => $sa ? (string) $p['name'] : $s2['name'] . ' · ' . $p['name'],
-                        'slot' => $slot < self::SERIES ? $slot : null, 'm' => $minutes((int) ($p['varP'] ?? 0)), 'kwh' => $kwh([$p])];
+                        'slot' => $slot < self::SERIES ? $slot : null, 'm' => $m, 'kwh' => $kwh([$p]), 'st' => $runs($status($p, $m))];
                 }
             }
             $tot = $minutes((int) ($sa ? ($sa['varP'] ?? 0) : ($site['varP'] ?? 0)));
@@ -624,9 +692,10 @@ final class EVReport
         $out = [];
         foreach ($lanes as $l) {
             $o = ['id' => $l['id'], 'name' => $l['name'], 'slot' => $l['slot'], 'pts' => $enc($l['m']),
-                'peak' => round($l['m'] ? max($l['m']) : 0.0, 2), 'atPeak' => $pi === null ? null : round($l['m'][$pi], 2), 'kwh' => round($l['kwh'], 2)];
+                'peak' => round($l['m'] ? max($l['m']) : 0.0, 2), 'atPeak' => $pi === null ? null : round($l['m'][$pi], 2), 'kwh' => round($l['kwh'], 2),
+                'st' => $l['st']];
             if ($sc['level'] === 'all') {
-                $o += ['limitKw' => $l['limitKw'], 'segs' => $l['segs'], 'limitMin' => $l['limitMin'], 'drill' => $l['drill']];
+                $o += ['limitKw' => $l['limitKw'], 'segs' => $l['segs'], 'limitMin' => $l['limitMin'], 'drill' => $l['drill'], 'occ' => $l['occ'], 'n' => $l['n']];
             }
             $out[] = $o;
         }
