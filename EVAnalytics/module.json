@@ -3,7 +3,7 @@
     "name": "EVAnalytics",
     "type": 3,
     "vendor": "",
-    "aliases": ["EV Auswertung", "Ladesäulen Auswertung"],
+    "aliases": ["EV Auswertung"],
     "url": "",
     "parentRequirements": [],
     "childRequirements": [],

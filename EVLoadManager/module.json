@@ -3,7 +3,7 @@
     "name": "EVLoadManager",
     "type": 3,
     "vendor": "",
-    "aliases": ["EV Lastmanagement", "Lastmanagement Wallbox", "Ladelastmanagement"],
+    "aliases": ["EV Lastmanagement"],
     "url": "",
     "parentRequirements": [],
     "childRequirements": [],
