@@ -27,12 +27,19 @@ foreach (EVPeriod::TYPES as $type) {
         }
     }
 }
+$days = [];
+foreach (['site:ADF', 'saeule:ADF:ADF-LS01', 'site:RGST', 'saeule:RGST:RGST-LS01'] as $sc) {
+    for ($d = mktime(0, 0, 0, 10, 1, 2026); $d <= EVPeriod::Day0($now); $d = EVPeriod::AddDays($d, 1)) {
+        $days[$sc . '|' . $d] = EVReport::Day($meta, $r, $sc, $d, $now);
+    }
+}
 $init = ['ev' => 'report', 'data' => $views['monat|0|all']];
 $tile = file_get_contents(__DIR__ . '/../EVAnalytics/module.html');
 $tile = str_replace('%%INITIAL%%', json_encode($init), $tile);
 
 $stub = '<script>
 var EV_VIEWS = ' . json_encode($views) . ';
+var EV_DAYS = ' . json_encode($days) . ';
 function requestAction(ident, value) {
   var v = JSON.parse(value);
   setTimeout(function () {
@@ -40,6 +47,8 @@ function requestAction(ident, value) {
       var d = EV_VIEWS[v.type + "|" + v.off + "|" + v.scope];
       handleMessage(JSON.stringify(d ? { ev: "report", cid: v.cid, data: d } : { ev: "csv", cid: v.cid, error: "keine Vorschau für diese Ansicht" }));
       handleMessage(JSON.stringify({ ev: "report", cid: "fremde-kachel", data: EV_VIEWS["jahr|0|all"] }));   // muss ignoriert werden
+    } else if (ident === "Day") {
+      handleMessage(JSON.stringify({ ev: "day", cid: v.cid, data: EV_DAYS[v.scope + "|" + v.day] || null }));
     } else if (ident === "Csv") {
       handleMessage({ ev: "csv", cid: v.cid, url: "#csv-" + v.mode, lines: 42 });
     }

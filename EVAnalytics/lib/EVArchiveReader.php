@@ -19,12 +19,31 @@ final class EVArchiveReader
         return $this->daily($varE, $from, $to, 'Avg');
     }
 
-    public function DailyMax(int $varP, int $from, int $to): array
+    /** Höchste Leistung je Tag mit Zeitpunkt: [Tagesbeginn => ['kw' => kW, 'at' => Zeitpunkt]] */
+    public function DailyPeak(int $varP, int $from, int $to): array
     {
-        return $this->daily($varP, $from, $to, 'Max');
+        $out = [];
+        foreach ($this->dailyRows($varP, $from, $to) as $d => $r) {
+            if (isset($r['Max'])) {
+                $out[$d] = ['kw' => (float) $r['Max'], 'at' => (int) ($r['MaxTime'] ?? $d)];
+            }
+        }
+        return $out;
     }
 
     private function daily(int $var, int $from, int $to, string $field): array
+    {
+        $out = [];
+        foreach ($this->dailyRows($var, $from, $to) as $d => $r) {
+            if (isset($r[$field])) {
+                $out[$d] = (float) $r[$field];
+            }
+        }
+        return $out;
+    }
+
+    /** Tagesaggregation [Tagesbeginn => Zeile mit Avg, Min, Max, MinTime, MaxTime, …], aufsteigend */
+    private function dailyRows(int $var, int $from, int $to): array
     {
         if (!$this->ac || $var <= 0 || !IPS_VariableExists($var) || $to <= $from) {
             return [];
@@ -33,8 +52,8 @@ final class EVArchiveReader
         $out = [];
         foreach (is_array($rows) ? $rows : [] as $r) {
             $d = EVPeriod::Day0((int) $r['TimeStamp']);
-            if ($d >= EVPeriod::Day0($from) && $d < $to && isset($r[$field])) {
-                $out[$d] = (float) $r[$field];
+            if ($d >= EVPeriod::Day0($from) && $d < $to) {
+                $out[$d] = $r;
             }
         }
         ksort($out);
@@ -84,13 +103,13 @@ final class EVArchiveReader
         return (bool) $this->ValueBefore($varB, $ts);
     }
 
-    /** Letzter geloggter Wert der 30 Tage vor $ts, null wenn keiner */
+    /** Letzter geloggter Wert der 30 Tage vor $ts, null wenn keiner (AC_GetLoggedValues liefert den neuesten zuerst) */
     public function ValueBefore(int $var, int $ts)
     {
         if (!$this->ac || $var <= 0 || !IPS_VariableExists($var)) {
             return null;
         }
-        $rows = @AC_GetLoggedValues($this->ac, $var, $ts - 30 * 86400, $ts - 1, 0);
+        $rows = @AC_GetLoggedValues($this->ac, $var, $ts - 30 * 86400, $ts - 1, 1);
         $best = null;
         foreach (is_array($rows) ? $rows : [] as $r) {
             if ($best === null || (int) $r['TimeStamp'] > (int) $best['TimeStamp']) {

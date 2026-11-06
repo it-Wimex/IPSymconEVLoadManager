@@ -92,3 +92,9 @@ check('Laden: Wechsel aus Belegt und Leistung', EVStats::ChargingFrom($bl, false
 ]);
 check('Laden: Anfangszustand lädt schon', EVStats::ChargingFrom([], true, [['TimeStamp' => 50, 'Value' => 0.0]], 7.0), [['TimeStamp' => 50, 'Value' => false]]);
 check('Laden: Schwelle 0,1 kW zählt', EVStats::ChargingFrom([], true, [['TimeStamp' => 50, 'Value' => 0.1]], 0.0), [['TimeStamp' => 50, 'Value' => true]]);
+
+// ---- Am Budget ----
+check('Über Schwelle: nur Wechsel', EVStats::Above([['TimeStamp' => 10, 'Value' => 13.8], ['TimeStamp' => 20, 'Value' => 13.9], ['TimeStamp' => 30, 'Value' => 7.0]], 0.0, 13.593),
+    [['TimeStamp' => 10, 'Value' => true], ['TimeStamp' => 30, 'Value' => false]]);
+check('Zusammenfassen: Lücke bis 120 s überbrückt', EVStats::Merge([[0, 100, true], [200, 300, true], [500, 600, true]], 120), [[0, 300, true], [500, 600, true]]);
+check('Sekunden in einem Fenster', EVStats::SecondsIn([[0, 300], [500, 600]], 250, 550), 100);

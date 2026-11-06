@@ -49,6 +49,20 @@ namespace Sim {
     {
         S()['headers'][] = $h;
     }
+    /**
+     * php://input liefert den Rumpf der simulierten Anfrage; http(s)-Adressen gehen an S()['http'],
+     * das die Anfrage an einen WebHook im Nachbau weiterreicht. Alles andere ist eine echte Datei.
+     */
+    function file_get_contents($f, $use = false, $ctx = null)
+    {
+        if ($f === 'php://input') {
+            return S()['input'] ?? '';
+        }
+        if (preg_match('#^https?://#', (string) $f)) {
+            return isset(S()['http']) ? (S()['http'])($f, $ctx ? (stream_context_get_options($ctx)['http'] ?? []) : []) : false;
+        }
+        return \file_get_contents($f, $use, $ctx);
+    }
 
     class IPSModule
     {
@@ -236,6 +250,9 @@ namespace Sim {
                 $prev = $v;
                 $days[$d]['Avg'] = ($days[$d]['Avg'] ?? 0.0) + $delta;
             } else {
+                if (!isset($days[$d]['Max']) || $v > $days[$d]['Max']) {
+                    $days[$d]['MaxTime'] = $x['TimeStamp'];
+                }
                 $days[$d]['Max'] = max($days[$d]['Max'] ?? -INF, $v);
                 $days[$d]['Min'] = min($days[$d]['Min'] ?? INF, $v);
                 $days[$d]['Avg'] = $v;

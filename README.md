@@ -21,6 +21,7 @@ IPSymconEVLoadManager/
     tools/           ChargePilot-Einrichtung.php: legt Ordner und ModBus-Adressen fuer den Datensammler an
   EVAnalytics/       EV Auswertung (Prefix EVAW): Archiv, Auswertungs-Kachel, CSV-Export
     lib/             Zeitraeume, Belegung, Bericht, Archivzugriff
+  EVAgent/           EV Standort-Agent: Lastmanagement + Datensammler ohne Symcon-Lizenz (PHP-Dienst)
   tests/             Tests ohne Symcon (php tests/run.php, php tests/sim/run_sim.php)
 ```
 
@@ -96,6 +97,14 @@ eine Saeule.
   kurzen Verbindungsausfaellen. Fuer Daten von vor Version 1.2 rechnet die
   Auswertung „aktiv geladen“ einmalig aus Belegt und Leistung nach (beim
   Uebernehmen vorgemerkt, beim Aufraeumen drei Ladepunkte je Minute).
+- Leistungsspitzen mit Uhrzeit (aus `MaxTime` der Tagesaggregation) und Dauer am
+  Budget bzw. Saeulen-Limit. Dafuer fuehrt die Auswertung je Standort und Saeule
+  die Ja/Nein-Variable „Am Budget“ (ab 98,5 % des Limits, Luecken bis 2 Minuten
+  ueberbrueckt); bestehende Daten werden einmalig aus der Leistung nachgerechnet.
+- Lastverlauf eines Tages (Vorwahl: Spitzentag, Klick auf einen Spitzen-Balken
+  oder ‹ › waehlt den Tag): gestapelt je Ladepunkt, Gesamtleistung, Budgetlinie,
+  Zeiten am Budget mit Dauer, Aufteilung zur Spitze je Ladepunkt (kW, Anteil,
+  Ø waehrend der Zeit am Budget, Energie am Tag).
 - Kachel mit Zeitraum (Woche, Monat, Jahr, 12 Monate), Auswahl und CSV-Export.
   Der CSV-Link laeuft ueber `/hook/evauswertung/csv` und gilt 5 Minuten.
 - Geschaeftszeiten fuer die Auslastung einstellbar (Standard Mo-Fr 7-18 Uhr).
@@ -103,6 +112,21 @@ eine Saeule.
   zaehlte der beim Anlegen geloggte Anfangswert 0 den ganzen Zaehlerstand als Verbrauch.
   Bestehende Variablen werden beim Uebernehmen umgestellt und neu aggregiert; Knopf
   „Zaehlervariablen neu aggregieren“ fuer den Fall unplausibler Energiewerte.
+
+**Lieferung an einen zentralen Symcon**
+- Im Datensammler unter „Lieferung an einen zentralen Symcon“ Adresse und Schluessel eintragen,
+  dann geht die Lieferung per POST an `/hook/evauswertung/ingest` der Zentrale statt an eine
+  EV Auswertung auf demselben Symcon. Puffer und Nachlieferung bleiben gleich.
+- In der EV Auswertung unter „Entfernte Standorte“ je Kuerzel einen Schluessel freigeben
+  (Kopf `X-EV-Key`). Ein Schluessel gilt nur fuer sein Kuerzel.
+
+## Standorte ohne Symcon-Lizenz: EV Standort-Agent
+Wo nur Ladesaeulen zu verwalten sind, braucht es kein Symcon. Der Agent in `EVAgent/` ist ein
+PHP-Dienst fuer Linux (oder Windows). Er fuehrt EV Lastmanagement und EV Datensammler unveraendert
+auf einem kleinen Symcon-Nachbau aus, spricht die Wallboxen direkt per Modbus TCP an (Alfen,
+andere Hersteller ueber eigene Register, ChargePilot nur lesend) und liefert an die EV Auswertung
+der Zentrale. Dazu kommt eine lokale Webansicht mit derselben Kachel. Einrichtung und
+Konfiguration: [EVAgent/README.md](EVAgent/README.md).
 
 Oeffentliche Funktionen: `EVDS_Sample`, `EVDS_ScanFolder`, `EVDS_ApplyScan`,
 `EVDS_ImportHistory`, `EVDS_TestDelivery`, `EVAW_Ingest`, `EVAW_Housekeeping`.
@@ -112,6 +136,8 @@ Die Rechenteile und beide Module laufen ohne Symcon:
 ```
 php tests/run.php            Einzeltests (Zaehler, Zeitraeume, Belegung, Bericht, Quellen)
 php tests/sim/run_sim.php    zwei Tage Betrieb im Symcon-Nachbau (EVLM + ChargePilot)
+php tests/sim/run_sim_remote.php   Lieferung per WebHook an die Zentrale (Freigabe, Puffer, Nachlieferung)
+php tests/agent/run_agent.php      EV Standort-Agent gegen nachgebaute Wallboxen und Zentrale
 php tests/preview.php        Kachel mit Testdaten nach tests/out/tile-preview.html
 ```
 

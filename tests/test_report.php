@@ -65,3 +65,38 @@ $cv = EVReport::Csv($meta, $r, 'monat', 0, 'saeule:RGST:RGST-LS01', 'verlauf', $
 $cl = explode("\r\n", trim($cv['text']));
 check('CSV Verlauf: 10 Tage Regenstauf', $cv['count'], 10);
 check('CSV Verlauf: erste Zeile', $cl[1], '05.10.2026;Regenstauf;Säule 1;links;20,00;1;1,00;0,50');
+
+// ---- Leistungsspitzen: Uhrzeit, Dauer am Budget, Lastverlauf ----
+$d2 = mktime(0, 0, 0, 10, 2, 2026);
+check('Spitzen: Zeitpunkt der höchsten Leistung', $s['kpi']['peakAt'], $d2 + 9 * 3600 + 14 * 60);
+check('Spitzen: am Budget im Monat (Lücke 10.01 überbrückt)', $s['kpi']['limitSec'], (51 + 10) * 60);
+check('Spitzen: Balken 2.10. mit Uhrzeit, Tag und Dauer', [$s['peaks'][1]['at'], $s['peaks'][1]['day'], $s['peaks'][1]['limitSec']], [$d2 + 9 * 3600 + 14 * 60, $d2, 3660]);
+check('Spitzen: Tag ohne Budget hat 0 Sekunden', $s['peaks'][2]['limitSec'], 0);
+check('Spitzen: Alle Standorte, Dauer je Standort', array_column($v['sitePeaks'], 'limitSec'), [3660, 0]);
+check('Spitzen: Alle Standorte, Zeitpunkt Arensdorf', $v['sitePeaks'][0]['at'], $d2 + 9 * 3600 + 14 * 60);
+
+$c = $s['curve'];
+check('Lastverlauf: Spitzentag vorgewählt', [$c['scope'], $c['day']], ['site:ADF', $d2]);
+check('Lastverlauf: Spitze 13,8 kW um 9.14 Uhr', $c['peak'], ['m' => 554, 'kw' => 13.8]);
+check('Lastverlauf: Abschnitte am Budget in Minuten', $c['segs'], [[554, 605], [900, 910]]);
+check('Lastverlauf: Dauer am Budget', $c['limitMin'], 61);
+check('Lastverlauf: Ladepunkte mit fester Farbe', array_column($c['series'], 'slot'), [0, 1]);
+check('Lastverlauf: Namen mit Säule', array_column($c['series'], 'name'), ['Säule 1 · links', 'Säule 1 · rechts']);
+check('Lastverlauf: Gesamt als Wechselliste', array_slice($c['total'], 0, 3), [[0, 0.0], [480, 7.0], [554, 13.8]]);
+check('Lastverlauf: ganzer Tag', [$c['len'], $c['upto']], [1440, 1440]);
+check('Aufteilung zur Spitze: kW', array_column($c['breakdown'], 'kw'), [7.0, 6.8]);
+check('Aufteilung zur Spitze: Anteil', array_column($c['breakdown'], 'share'), [round(7 / 13.8, 4), round(6.8 / 13.8, 4)]);
+check('Aufteilung: Ø kW am Budget', array_column($c['breakdown'], 'avgLimit'), [round((51 * 7.0 + 10 * 6.9) / 61, 2), round((50 * 6.8 + 6.0 + 10 * 6.9) / 61, 2)]);
+check('Aufteilung: Energie am Tag', array_column($c['breakdown'], 'kwh'), [10.0, 5.0]);
+check('Lastverlauf: Navigation', [$c['prev'], $c['next']], [mktime(0, 0, 0, 10, 1, 2026), mktime(0, 0, 0, 10, 3, 2026)]);
+check('Lastverlauf Alle Standorte: Standort mit der höchsten Auslastung des Budgets', $v['curve']['scope'], 'site:ADF');
+
+$first = EVReport::Day($meta, $r, 'site:ADF', mktime(0, 0, 0, 9, 1, 2026), $now);
+check('Lastverlauf: vor Beginn der Aufzeichnung wird der erste Tag gezeigt', [$first['day'], $first['prev']], [mktime(0, 0, 0, 10, 1, 2026), null]);
+$today = EVReport::Day($meta, $r, 'site:ADF', $now + 5 * 86400, $now);
+check('Lastverlauf: Zukunft wird heute, nur bis jetzt', [$today['day'], $today['upto'], $today['next']], [EVPeriod::Day0($now), 720, null]);
+check('Lastverlauf: Säule ohne Limit', EVReport::Day($meta, $r, 'saeule:RGST:RGST-LS01', $now, $now)['limitMin'], null);
+check('Lastverlauf: Alle Standorte direkt gibt es nicht', EVReport::Day($meta, $r, 'all', $now, $now), null);
+$noX = $meta;
+unset($noX['ADF']['varX']);
+check('Altbestand ohne „am Budget“: Dauer unbekannt', EVReport::Build($noX, $r, 'monat', 0, 'site:ADF', $now, $biz)['kpi']['limitSec'], null);

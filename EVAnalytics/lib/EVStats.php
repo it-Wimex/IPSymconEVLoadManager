@@ -41,6 +41,52 @@ final class EVStats
     }
 
     /**
+     * Ja/Nein aus einer Messreihe: Wert ab $thr. Für "am Budget" aus der Leistung (Nachberechnung).
+     * @return array nur die Wechsel, aufsteigend [['TimeStamp' => t, 'Value' => bool], …]
+     */
+    public static function Above(array $values, float $v0, float $thr): array
+    {
+        $on = $v0 >= $thr;
+        $out = [];
+        foreach ($values as $r) {
+            $now = (float) $r['Value'] >= $thr;
+            if ($now !== $on) {
+                $out[] = ['TimeStamp' => (int) $r['TimeStamp'], 'Value' => $now];
+                $on = $now;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Intervalle zusammenfassen, deren Lücke höchstens $gap Sekunden ist. Das Lastmanagement regelt knapp
+     * unter dem Budget; ohne das zerfiele eine lange Spitze in viele kurze.
+     */
+    public static function Merge(array $intervals, int $gap): array
+    {
+        $out = [];
+        foreach ($intervals as $iv) {
+            $n = count($out);
+            if ($n && $iv[0] - $out[$n - 1][1] <= $gap) {
+                $out[$n - 1][1] = max($out[$n - 1][1], $iv[1]);
+            } else {
+                $out[] = $iv;
+            }
+        }
+        return $out;
+    }
+
+    /** Sekunden der Intervalle innerhalb [$from, $to) */
+    public static function SecondsIn(array $intervals, int $from, int $to): int
+    {
+        $sum = 0;
+        foreach ($intervals as $iv) {
+            $sum += max(0, min($iv[1], $to) - max($iv[0], $from));
+        }
+        return $sum;
+    }
+
+    /**
      * Belegt-Intervalle innerhalb [$from, $to). Ein Intervall, das vor $from beginnt, wird abgeschnitten.
      * @return array [[start, ende, beganInZeitraum(bool)], …]
      */

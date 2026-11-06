@@ -12,13 +12,19 @@
  *
  * $reader = Objekt mit den Methoden (im Modul ueber AC_*, im Test mit erfundenen Daten):
  *   DailyEnergy(int $varE, int $from, int $to): array  [Tagesbeginn => kWh]
- *   DailyMax(int $varP, int $from, int $to): array     [Tagesbeginn => kW]
+ *   DailyPeak(int $varP, int $from, int $to): array    [Tagesbeginn => ['kw' => Höchstwert, 'at' => Zeitpunkt]]
  *   Logged(int $varB, int $from, int $to): array       aufsteigend [['TimeStamp' => t, 'Value' => bool]]
  *   StateBefore(int $varB, int $ts): bool
+ *   Values(int $var, int $from, int $to): array        aufsteigend, Werte unverändert (Lastverlauf)
+ *   ValueBefore(int $var, int $ts)                     letzter Wert vor $ts oder null
+ *
+ * Standort und Säule haben zusätzlich 'varX' (Ja/Nein "am Budget" bzw. "am Säulen-Limit").
  */
 final class EVReport
 {
-    public const LIMIT_HIT = 0.985;   // ab diesem Anteil am Limit gilt ein Tag als "am Budget"
+    public const LIMIT_HIT = 0.985;   // ab diesem Anteil am Limit gilt die Leistung als "am Budget"
+    public const MERGE_GAP = 120;     // Lücken bis 2 Minuten am Limit zählen nicht als Ende der Spitze
+    public const SERIES = 8;          // Ladepunkte mit eigener Farbe im Lastverlauf, weitere werden zusammengefasst
 
     // ------------------------------------------------------------------ Auswahl
 
@@ -122,6 +128,20 @@ final class EVReport
             }
         }
         return null;
+    }
+
+    /** Zeiten am Limit (zusammengefasst) im Zeitraum; null ohne Variable oder Limit */
+    private static function limitIntervals($reader, int $varX, int $detailSince, int $from, int $to): ?array
+    {
+        if ($varX <= 0 || $detailSince <= 0) {
+            return null;
+        }
+        $a = max($from, $detailSince);
+        if ($to <= $a) {
+            return [];
+        }
+        $iv = EVStats::Intervals($reader->Logged($varX, $a, $to), $reader->StateBefore($varX, $a), $a, $to);
+        return EVStats::Merge($iv, self::MERGE_GAP);
     }
 
     // ------------------------------------------------------------------ Kachel
@@ -245,29 +265,43 @@ final class EVReport
         }
         unset($e);
 
-        // ---- Leistungsspitzen
+        // ---- Leistungsspitzen: Tageshöchstwert mit Uhrzeit, Dauer am Limit aus der Ja/Nein-Variable "am Budget"
         $peaks = [];
         $sitePeaks = null;
         $peakMax = null;
+        $peakAt = null;
         $peakSite = null;
+        $peakScope = null;   // Auswahl und Tag für den Lastverlauf
+        $peakDay = null;
         $limitDays = 0;
+        $limitSec = null;
         $peakDays = 0;
         foreach ($P['buckets'] as $b) {
-            $peaks[] = ['x' => $b['x'], 't' => $b['t'], 'kw' => null, 'limitDays' => 0, 'days' => 0];
+            $peaks[] = ['x' => $b['x'], 't' => $b['t'], 'kw' => null, 'at' => null, 'day' => null, 'limitDays' => 0, 'limitSec' => null, 'days' => 0];
         }
         if ($sc['level'] === 'all') {
             $sitePeaks = [];
             $bestRatio = -1.0;
             foreach ($meta as $sk => $s) {
-                $sp = ['key' => (string) $sk, 'name' => (string) ($s['name'] ?? $sk), 'budget' => $s['budgetKw'] ?? null, 'peak' => null, 'limitDays' => 0, 'days' => 0];
+                $sp = ['key' => (string) $sk, 'name' => (string) ($s['name'] ?? $sk), 'budget' => $s['budgetKw'] ?? null, 'peak' => null, 'at' => null,
+                    'day' => null, 'limitDays' => 0, 'limitSec' => null, 'days' => 0];
                 if (!empty($s['varP']) && !empty($s['detailSince'])) {
                     $a = max($P['start'], EVPeriod::Day0((int) $s['detailSince']));
-                    foreach ($end > $a ? $reader->DailyMax((int) $s['varP'], $a, $end) : [] as $kw) {
-                        $sp['peak'] = max($sp['peak'] ?? 0.0, (float) $kw);
+                    foreach ($end > $a ? $reader->DailyPeak((int) $s['varP'], $a, $end) : [] as $day => $pk) {
+                        $kw = (float) $pk['kw'];
+                        if ($sp['peak'] === null || $kw > $sp['peak']) {
+                            $sp['peak'] = $kw;
+                            $sp['at'] = (int) $pk['at'];
+                            $sp['day'] = (int) $day;
+                        }
                         $sp['days']++;
                         if ($sp['budget'] && $kw >= self::LIMIT_HIT * $sp['budget']) {
                             $sp['limitDays']++;
                         }
+                    }
+                    $lim = self::limitIntervals($reader, $sp['budget'] ? (int) ($s['varX'] ?? 0) : 0, (int) $s['detailSince'], $P['start'], $end);
+                    if ($lim !== null && $sp['peak'] !== null) {
+                        $sp['limitSec'] = EVStats::Seconds($lim);
                     }
                 }
                 if ($sp['peak'] !== null) {
@@ -276,35 +310,62 @@ final class EVReport
                     if ($ratio > $bestRatio) {
                         $bestRatio = $ratio;
                         $peakMax = $sp['peak'];
+                        $peakAt = $sp['at'];
                         $peakSite = $sp['name'];
+                        $peakScope = 'site:' . $sk;
+                        $peakDay = $sp['day'];
                     }
                     $limitDays += $sp['limitDays'];
                     $peakDays += $sp['days'];
+                    if ($sp['limitSec'] !== null) {
+                        $limitSec = ($limitSec ?? 0) + $sp['limitSec'];
+                    }
                 }
                 $sitePeaks[] = $sp;
             }
         } else {
             $varP = $sc['level'] === 'site' ? ($site['varP'] ?? 0) : ($sa['varP'] ?? 0);
+            $varX = $sc['level'] === 'site' ? ($site['varX'] ?? 0) : ($sa['varX'] ?? 0);
             $a = max($P['start'], EVPeriod::Day0((int) ($site['detailSince'] ?? 0)));
             if ($varP && !empty($site['detailSince']) && $end > $a) {
-                foreach ($reader->DailyMax((int) $varP, $a, $end) as $day => $kw) {
+                foreach ($reader->DailyPeak((int) $varP, $a, $end) as $day => $pk) {
                     $i = self::bucketOf($P['buckets'], (int) $day);
                     if ($i === null) {
                         continue;
                     }
-                    $kw = (float) $kw;
-                    $peaks[$i]['kw'] = round(max($peaks[$i]['kw'] ?? 0.0, $kw), 2);
+                    $kw = (float) $pk['kw'];
+                    if ($peaks[$i]['kw'] === null || $kw > $peaks[$i]['kw']) {
+                        $peaks[$i]['kw'] = round($kw, 2);
+                        $peaks[$i]['at'] = (int) $pk['at'];
+                        $peaks[$i]['day'] = (int) $day;
+                    }
                     $peaks[$i]['days']++;
                     $peakDays++;
-                    $peakMax = max($peakMax ?? 0.0, $kw);
+                    if ($peakMax === null || $kw > $peakMax) {
+                        $peakMax = $kw;
+                        $peakAt = (int) $pk['at'];
+                        $peakDay = (int) $day;
+                    }
                     if ($limitKw && $kw >= self::LIMIT_HIT * $limitKw) {
                         $peaks[$i]['limitDays']++;
                         $limitDays++;
                     }
                 }
+                $lim = self::limitIntervals($reader, $limitKw ? (int) $varX : 0, (int) $site['detailSince'], $P['start'], $end);
+                if ($lim !== null && $peakDays) {
+                    $limitSec = EVStats::Seconds($lim);
+                    foreach ($peaks as $i => &$pk) {
+                        if ($pk['days']) {
+                            $pk['limitSec'] = EVStats::SecondsIn($lim, $P['buckets'][$i]['s'], $P['buckets'][$i]['e']);
+                        }
+                    }
+                    unset($pk);
+                }
             }
             $peakMax = $peakMax === null ? null : round($peakMax, 2);
+            $peakScope = self::ScopeString($sc);
         }
+        $curve = $peakDay !== null ? self::Day($meta, $reader, $peakScope, $peakDay, $now) : null;
 
         // ---- Tabelle
         $sum = function (array $keys) use ($acc) {
@@ -395,12 +456,156 @@ final class EVReport
                 'bizOcc' => $bizWin > 0 ? round($bizBusy / $bizWin, 4) : null,
                 'load' => $T['lobs'] > 0 ? round($T['load'] / $T['lobs'], 4) : null,
                 'bizLoad' => $bizWinL > 0 ? round($bizLoad / $bizWinL, 4) : null,
-                'peak' => $peakMax, 'peakSite' => $peakSite, 'limitDays' => $limitDays, 'detailDays' => $peakDays
+                'peak' => $peakMax, 'peakAt' => $peakAt, 'peakSite' => $peakSite, 'limitDays' => $limitDays, 'limitSec' => $limitSec,
+                'detailDays' => $peakDays
             ],
-            'energy' => $energy, 'peaks' => $peaks, 'sitePeaks' => $sitePeaks,
+            'energy' => $energy, 'peaks' => $peaks, 'sitePeaks' => $sitePeaks, 'curve' => $curve,
             'heat' => ['grid' => $grid, 'gridL' => $hasLoad ? $gridL : null, 'days' => count($detailDaySet)],
             'rows' => $rows, 'scopeOptions' => self::ScopeOptions($meta),
             'source' => ['histStart' => $histStart, 'setup' => $setup]
+        ];
+    }
+
+    // ------------------------------------------------------------------ Lastverlauf eines Tages
+
+    /**
+     * Lastverlauf eines Tages für einen Standort oder eine Säule: Gesamtleistung (Höchstwert je Minute, wie
+     * bei den Spitzen), darunter gestapelt die Ladepunkte (Ø je Minute), Zeiten am Limit und die Aufteilung
+     * zur Spitze. Minuten zählen ab Tagesbeginn. Reihen kommen als Wechselliste [[Minute, kW], …] mit 0,1 kW.
+     */
+    public static function Day(array $meta, $reader, string $scopeStr, int $day, int $now): ?array
+    {
+        $sc = self::ParseScope($meta, $scopeStr);
+        if ($sc['level'] === 'all' || empty($meta[$sc['site']]['detailSince'])) {
+            return null;
+        }
+        $site = $meta[$sc['site']];
+        $sa = $sc['level'] === 'saeule' ? self::saeuleOf($meta, $sc['site'], $sc['saeule']) : null;
+        $first = EVPeriod::Day0((int) $site['detailSince']);
+        $today0 = EVPeriod::Day0($now);
+        $d0 = min(max(EVPeriod::Day0($day), $first), $today0);
+        $d1 = EVPeriod::AddDays($d0, 1);
+        $end = min($d1, $now);
+        $upto = max(0, (int) ceil(($end - $d0) / 60));   // Minuten mit Daten, heute nur bis jetzt
+        $limitKw = $sa ? ($sa['limitKw'] ?? null) : ($site['budgetKw'] ?? null);
+
+        // Stand am Ende jeder Minute (Archiv speichert nur Änderungen)
+        $minutes = function (int $var) use ($reader, $d0, $end, $upto) {
+            $v = (float) ($reader->ValueBefore($var, $d0) ?? 0.0);
+            $rows = $var > 0 ? $reader->Values($var, $d0, $end) : [];
+            $n = count($rows);
+            $k = 0;
+            $out = [];
+            for ($i = 0; $i < $upto; $i++) {
+                $lim = $d0 + ($i + 1) * 60;
+                while ($k < $n && (int) $rows[$k]['TimeStamp'] < $lim) {
+                    $v = (float) $rows[$k]['Value'];
+                    $k++;
+                }
+                $out[] = $v;
+            }
+            return $out;
+        };
+        $enc = function (array $m) {
+            $o = [];
+            $last = null;
+            foreach ($m as $i => $v) {
+                $r = round($v, 1);
+                if ($r !== $last) {
+                    $o[] = [$i, $r];
+                    $last = $r;
+                }
+            }
+            return $o;
+        };
+
+        // Ladepunkte; die Farbe hängt am Ladepunkt (Position im Standort), nicht an der Rangfolge
+        $series = [];
+        $more = null;
+        $idx = 0;
+        foreach ($site['saeulen'] ?? [] as $s2) {
+            foreach ($s2['points'] ?? [] as $p) {
+                $slot = $idx++;
+                if ($sa && $s2['id'] !== $sa['id']) {
+                    continue;
+                }
+                $m = $minutes((int) ($p['varP'] ?? 0));
+                $kwh = array_sum($reader->DailyEnergy((int) ($p['varE'] ?? 0), $d0, $d1));
+                if ($slot < self::SERIES) {
+                    $series[] = ['id' => (string) $p['id'], 'name' => $sa ? (string) $p['name'] : $s2['name'] . ' · ' . $p['name'], 'slot' => $slot, 'm' => $m, 'kwh' => $kwh];
+                } else {
+                    $more = $more ?? ['id' => 'weitere', 'name' => 'Weitere Ladepunkte', 'slot' => null, 'm' => array_fill(0, $upto, 0.0), 'kwh' => 0.0];
+                    foreach ($m as $i => $v) {
+                        $more['m'][$i] += $v;
+                    }
+                    $more['kwh'] += $kwh;
+                }
+            }
+        }
+        if ($more) {
+            $series[] = $more;
+        }
+
+        $tot = $minutes((int) ($sa ? ($sa['varP'] ?? 0) : ($site['varP'] ?? 0)));
+        $pi = null;
+        foreach ($tot as $i => $v) {
+            if ($v > 0 && ($pi === null || $v > $tot[$pi])) {
+                $pi = $i;
+            }
+        }
+
+        // Zeiten am Limit wie in der Auswertung des Zeitraums: Minuten ab 98,5 %, Lücken bis 2 Minuten überbrückt
+        $segs = [];
+        if ($limitKw) {
+            $iv = [];
+            foreach ($tot as $i => $v) {
+                if ($v >= self::LIMIT_HIT * $limitKw) {
+                    $iv[] = [$i * 60, ($i + 1) * 60];
+                }
+            }
+            foreach (EVStats::Merge($iv, self::MERGE_GAP) as $x) {
+                $segs[] = [intdiv($x[0], 60), intdiv($x[1], 60)];
+            }
+        }
+        $limitMin = 0;
+        foreach ($segs as $g) {
+            $limitMin += $g[1] - $g[0];
+        }
+
+        // Aufteilung: Leistung zur Spitze und Ø während der Zeit am Limit
+        $sumAtPeak = 0.0;
+        foreach ($series as $x) {
+            $sumAtPeak += $pi === null ? 0.0 : $x['m'][$pi];
+        }
+        $out = [];
+        $breakdown = [];
+        foreach ($series as $x) {
+            $atPeak = $pi === null ? null : $x['m'][$pi];
+            $avg = null;
+            if ($limitMin > 0) {
+                $sum = 0.0;
+                foreach ($segs as $g) {
+                    for ($i = $g[0]; $i < $g[1]; $i++) {
+                        $sum += $x['m'][$i];
+                    }
+                }
+                $avg = round($sum / $limitMin, 2);
+            }
+            $breakdown[] = ['id' => $x['id'], 'name' => $x['name'], 'slot' => $x['slot'],
+                'kw' => $atPeak === null ? null : round($atPeak, 2),
+                'share' => $atPeak === null || $sumAtPeak <= 0 ? null : round($atPeak / $sumAtPeak, 4),
+                'avgLimit' => $avg, 'kwh' => round($x['kwh'], 2)];
+            $out[] = ['id' => $x['id'], 'name' => $x['name'], 'slot' => $x['slot'], 'pts' => $enc($x['m'])];
+        }
+
+        return [
+            'scope' => self::ScopeString($sc), 'day' => $d0, 'len' => intdiv($d1 - $d0, 60), 'upto' => $upto,
+            'label' => $sa ? $site['name'] . ' · ' . $sa['name'] : (string) $site['name'],
+            'limitKw' => $limitKw, 'limitLabel' => $sa ? 'Säulen-Limit' : 'Budget',
+            'total' => $enc($tot), 'series' => $out,
+            'peak' => $pi === null ? null : ['m' => $pi, 'kw' => round($tot[$pi], 2)],
+            'segs' => $segs, 'limitMin' => $limitKw ? $limitMin : null, 'breakdown' => $breakdown,
+            'prev' => $d0 > $first ? EVPeriod::AddDays($d0, -1) : null, 'next' => $d0 < $today0 ? $d1 : null
         ];
     }
 

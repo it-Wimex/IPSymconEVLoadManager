@@ -57,6 +57,26 @@
     .ev-occ i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--ev-laden); opacity: .35; }
     .ev-occ i.l { opacity: 1; }
     .ev-seg.sm button { padding: 3px 8px; font-size: 11px; }
+    .ev-card.busy { opacity: .55; transition: opacity .2s; }
+    .ev-step.sm button { width: 24px; height: 24px; font-size: 13px; }
+    .ev-step.sm span { font-size: 12px; min-width: 10ch; }
+    .ev-cmeta { font-size: 12px; color: var(--ev-muted); margin: -2px 0 6px; }
+    .ev-cmeta b { color: var(--ev-text); }
+    .ev-chart .seg { fill: var(--ev-text); fill-opacity: .07; }
+    .ev-chart .tot { fill: none; stroke: var(--ev-text); stroke-width: 1.5; stroke-linejoin: round; }
+    .ev-chart .sep { fill: none; stroke: var(--ev-surface); stroke-width: 1; }
+    .ev-chart .xh { stroke: var(--ev-text); stroke-opacity: .45; stroke-width: 1; pointer-events: none; }
+    .ev-chart .pk { fill: var(--ev-text); stroke: var(--ev-surface); stroke-width: 2; }
+    .ev-chart .pkt { fill: var(--ev-text); font-weight: 700; }
+    .ev-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+    .ev-leg .ln { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--ev-text); vertical-align: 3px; margin-right: 5px; }
+    .ev-leg .bd { display: inline-block; width: 14px; height: 10px; border-radius: 2px; background: var(--ev-text); opacity: .12; vertical-align: -1px; margin-right: 5px; }
+    .ev-brk { margin-top: 10px; }
+    .ev-brk table { min-width: 480px; }
+    .ev-brk th { cursor: default; }
+    .ev-brk .cap { font-size: 12px; color: var(--ev-muted); margin-bottom: 4px; }
+    .ev-tip .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+    .ev-tip .m { opacity: .75; margin-top: 3px; }
     .ev-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }
     .ev.wide .ev-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .ev.wide .ev-grid .full { grid-column: 1 / -1; }
@@ -165,6 +185,20 @@
             <div class="ev-chart" id="ev_peak"></div>
             <div class="ev-leg" id="ev_pleg"></div>
         </section>
+        <section class="ev-card full" id="ev_curvecard">
+            <div class="ev-ch">
+                <h4 id="ev_ctitle">Lastverlauf</h4>
+                <div class="ev-step sm">
+                    <button type="button" id="ev_cprev" aria-label="Vorheriger Tag">‹</button>
+                    <span id="ev_clabel" class="num"></span>
+                    <button type="button" id="ev_cnext" aria-label="Nächster Tag">›</button>
+                </div>
+            </div>
+            <div class="ev-cmeta" id="ev_cmeta"></div>
+            <div class="ev-chart" id="ev_curve"></div>
+            <div class="ev-leg" id="ev_cleg"></div>
+            <div class="ev-brk" id="ev_cbrk"></div>
+        </section>
         <section class="ev-card full">
             <div class="ev-ch"><h4 id="ev_ttitle">Ladepunkte</h4><span class="m" id="ev_tmeta"></span></div>
             <div class="ev-tbl" id="ev_table"></div>
@@ -182,6 +216,10 @@
         var cid = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
         var sort = { col: 'kwh', dir: -1 };
         var heatMode = 'b';   // Heatmap: b = belegt, l = aktiv geladen
+        var curve = null;     // angezeigter Lastverlauf
+        // Kategorische Farben je Ladepunkt (geprüft auf Farbsehschwäche, feste Reihenfolge), hell und dunkel
+        var SER_L = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+        var SER_D = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
         var NF0 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
         var NF1 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
         var WD = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -193,6 +231,13 @@
         function md(s) { var d = ts(s); return (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1) + '/' + d.getFullYear(); }
         function dmy(s) { var d = ts(s); return d.getDate() + '.' + (d.getMonth() + 1) + '.' + d.getFullYear(); }
         function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function p2(n) { return (n < 10 ? '0' : '') + n; }
+        function hm(s) { var d = ts(s); return p2(d.getHours()) + ':' + p2(d.getMinutes()); }
+        function dm(s) { var d = ts(s); return d.getDate() + '.' + (d.getMonth() + 1) + '.'; }
+        function fmin(m) { m = Math.round(m); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + p2(m % 60) + ' min'; }
+        function dayName(s) { var d = ts(s); return ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getDay()] + ', ' + dmy(s); }
+        function isDark() { var m = getComputedStyle(root).color.match(/[\d.]+/g); return !!m && (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255 > 0.5; }
+        function serColor(slot) { return slot == null ? 'var(--ev-muted)' : (isDark() ? SER_D : SER_L)[slot % 8]; }
 
         // Hell/Dunkel-Fallback für WebViews ohne color-mix() (wie in der Lastmanagement-Kachel)
         function evTheme() {
@@ -258,18 +303,22 @@
             });
             el.innerHTML = s + '</svg>';
             hover(el, function (i) { return o.tip(items[i]); });
+            if (o.click) el.addEventListener('click', function (ev) { var t = ev.target; if (t.classList && t.classList.contains('hit')) o.click(items[+t.getAttribute('data-i')]); });
+        }
+        function placeTip(ev, h) {
+            tip.innerHTML = h; tip.hidden = false;
+            var rb = root.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+            var x = ev.clientX - rb.left + 14, yy = ev.clientY - rb.top - th - 10;
+            if (x + tw > rb.width) x = ev.clientX - rb.left - tw - 14;
+            if (yy < 0) yy = ev.clientY - rb.top + 16;
+            tip.style.left = Math.max(0, x) + 'px'; tip.style.top = yy + 'px';
         }
         function hover(el, html) {
             function show(ev) {
                 var t = ev.target; if (!t.classList || !t.classList.contains('hit')) { hide(); return; }
                 var h = html(+t.getAttribute('data-i'));
                 if (!h) { hide(); return; }
-                tip.innerHTML = h; tip.hidden = false;
-                var rb = root.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
-                var x = ev.clientX - rb.left + 14, yy = ev.clientY - rb.top - th - 10;
-                if (x + tw > rb.width) x = ev.clientX - rb.left - tw - 14;
-                if (yy < 0) yy = ev.clientY - rb.top + 16;
-                tip.style.left = Math.max(0, x) + 'px'; tip.style.top = yy + 'px';
+                placeTip(ev, h);
             }
             function hide() { tip.hidden = true; }
             el.onmousemove = show; el.onmouseleave = hide; el.onclick = show;
@@ -310,6 +359,10 @@
             else if (d.scope.level === 'all') peakSub = 'am höchsten in <b>' + esc(k.peakSite || '') + '</b> · ' + (k.limitDays ? '<b>' + k.limitDays + (k.limitDays === 1 ? ' Standort-Tag' : ' Standort-Tage') + '</b> am Budget' : 'nie am Budget');
             else if (d.scope.limitKw) peakSub = (k.limitDays ? 'an <b>' + k.limitDays + ' von ' + k.detailDays + ' Tagen</b> am ' + d.scope.limitLabel : 'nie am ' + d.scope.limitLabel) + ' (' + NF1.format(d.scope.limitKw) + ' kW)';
             else peakSub = 'ohne ' + d.scope.limitLabel;
+            if (k.peak != null && k.peakAt) {
+                var lbl0 = d.scope.level === 'all' ? 'Budget' : d.scope.limitLabel;
+                peakSub += '<br>Spitze am <b>' + dm(k.peakAt) + '</b> um <b>' + hm(k.peakAt) + '</b>' + (k.limitSec ? ' · zusammen <b>' + fmin(k.limitSec / 60) + '</b> am ' + lbl0 : '');
+            }
             var cards = [
                 { l: 'Energie', v: kwh(k.kwh), u: 'kWh', s: ch },
                 { l: 'Ladevorgänge', v: k.ses == null ? '–' : NF0.format(k.ses), u: '', s: k.ses == null ? noDet : (k.ses ? 'Ø <b>' + kwh(k.avgKwh) + ' kWh</b> · Ø ' + dur(k.avgDur) : 'keine im Zeitraum') },
@@ -358,7 +411,8 @@
                     return '<button type="button" class="ev-site" data-scope="site:' + esc(s.key) + '"><b>' + esc(s.name) + '</b>' +
                         '<span class="t"><i style="width:' + pc.toFixed(1) + '%;background:' + col + '"></i></span>' +
                         '<span class="v num">' + (s.peak == null ? '–' : NF1.format(s.peak)) + (s.budget ? ' / ' + NF1.format(s.budget) : '') + ' kW</span>' +
-                        '<span class="s">' + (s.peak == null ? 'keine Daten' : (s.limitDays ? '▲ an ' + s.limitDays + (s.limitDays === 1 ? ' Tag' : ' Tagen') + ' am Budget, Lastmanagement hat gedrosselt' : (s.budget ? 'nie am Budget' : 'ohne Budget'))) + '</span></button>';
+                        '<span class="s">' + (s.peak == null ? 'keine Daten' : (s.limitDays ? '▲ an ' + s.limitDays + (s.limitDays === 1 ? ' Tag' : ' Tagen') + ' am Budget' + (s.limitSec ? ', zusammen ' + fmin(s.limitSec / 60) : '') + ', Lastmanagement hat gedrosselt' : (s.budget ? 'nie am Budget' : 'ohne Budget')) +
+                            (s.at ? ' · Spitze ' + dm(s.at) + ' ' + hm(s.at) : '')) + '</span></button>';
                 }).join('') + '</div>';
                 return;
             }
@@ -374,10 +428,15 @@
                 tip: function (p) {
                     if (p.kw == null) return '<b>' + esc(p.t) + '</b>keine Daten';
                     var t = '<b>' + esc(p.t) + ' · ' + NF1.format(p.kw) + ' kW</b>';
-                    if (!lim) return t;
-                    return t + (d.unit === 'Tag' ? (p.limitDays ? 'am ' + lbl + ', Lastmanagement hat gedrosselt' : NF0.format(p.kw / lim * 100) + ' % vom ' + lbl)
-                        : (p.limitDays ? 'an ' + p.limitDays + ' von ' + p.days + ' Tagen am ' + lbl : 'nie am ' + lbl));
-                }
+                    if (p.at) t += '<div>' + (d.unit === 'Tag' ? 'um ' : 'am ' + dm(p.at) + ' um ') + hm(p.at) + ' Uhr</div>';
+                    if (lim) {
+                        t += '<div>' + (d.unit === 'Tag' ? (p.limitDays ? 'am ' + lbl + ', Lastmanagement hat gedrosselt' : NF0.format(p.kw / lim * 100) + ' % vom ' + lbl)
+                            : (p.limitDays ? 'an ' + p.limitDays + ' von ' + p.days + ' Tagen am ' + lbl : 'nie am ' + lbl)) + '</div>';
+                        if (p.limitSec) t += '<div>▲ zusammen ' + fmin(p.limitSec / 60) + ' am ' + lbl + '</div>';
+                    }
+                    return t + (p.day != null ? '<div class="m">Klicken: Lastverlauf dieses Tages</div>' : '');
+                },
+                click: function (p) { if (p.day != null) { askDay(view.scope, p.day); $('ev_curvecard').scrollIntoView({ block: 'nearest' }); } }
             });
         }
 
@@ -413,6 +472,146 @@
             });
             leg.innerHTML = '<span>0 %<span class="ev-ramp">' + [0, .25, .5, .75, 1].map(function (v) { return '<i style="background:var(--ev-laden);opacity:' + (0.06 + 0.9 * v).toFixed(2) + '"></i>'; }).join('') + '</span>100 % ' + (mode === 'l' ? 'lädt aktiv' : 'belegt') + '</span>' +
                 '<span>Ø über ' + d.scope.points + ' Ladepunkte und ' + d.heat.days + ' Tage</span>';
+        }
+
+        // ---------- Lastverlauf eines Tages ----------
+        function askDay(scope, day) {
+            $('ev_curvecard').classList.add('busy');
+            tip.hidden = true;
+            if (typeof requestAction === 'function') requestAction('Day', JSON.stringify({ scope: scope, day: day, cid: cid }));
+        }
+        // Wechselliste [[Minute, kW], …] in eine Minutenreihe
+        function expand(list, n) {
+            var a = new Array(n), k = 0, v = 0;
+            for (var i = 0; i < n; i++) { while (k < list.length && list[k][0] <= i) { v = list[k][1]; k++; } a[i] = v; }
+            return a;
+        }
+        // Treppenlinie über die Minuten; Läufe gleicher Werte werden zu einem Stück
+        function stepTop(arr, x, y) {
+            var s = 'M' + x(0) + ',' + y(arr[0]);
+            for (var i = 1; i <= arr.length; i++) {
+                if (i === arr.length || arr[i] !== arr[i - 1]) { s += 'H' + x(i); if (i < arr.length) s += 'V' + y(arr[i]); }
+            }
+            return s;
+        }
+        function stepBack(arr, x, y) {
+            var n = arr.length, s = 'L' + x(n) + ',' + y(arr[n - 1]);
+            for (var i = n - 1; i >= 0; i--) {
+                if (i === 0 || arr[i] !== arr[i - 1]) { s += 'H' + x(i); if (i > 0) s += 'V' + y(arr[i - 1]); }
+            }
+            return s + 'Z';
+        }
+        function renderCurve(c) {
+            var card = $('ev_curvecard'), el = $('ev_curve');
+            card.classList.remove('busy');
+            curve = c;
+            $('ev_cprev').disabled = !c || c.prev == null;
+            $('ev_cnext').disabled = !c || c.next == null;
+            if (!c || !c.upto) {
+                $('ev_ctitle').textContent = 'Lastverlauf';
+                $('ev_clabel').textContent = '';
+                $('ev_cmeta').textContent = '';
+                $('ev_cleg').innerHTML = ''; $('ev_cbrk').innerHTML = '';
+                el.innerHTML = '<div class="ev-empty">' + (data ? 'Den Lastverlauf gibt es erst ab ' + dmy(data.source.setup) + '.' : 'Keine Daten.') + '</div>';
+                return;
+            }
+            var lim = c.limitKw, lbl = c.limitLabel, n = c.upto;
+            $('ev_ctitle').textContent = 'Lastverlauf · ' + c.label;
+            $('ev_clabel').textContent = dayName(c.day);
+            var meta = c.peak ? 'Spitze <b>' + NF1.format(c.peak.kw) + ' kW</b> um <b>' + hm(c.day + c.peak.m * 60) + '</b>' : 'kein Ladevorgang';
+            if (lim) meta += c.limitMin ? ' · <b>▲ ' + fmin(c.limitMin) + '</b> am ' + lbl + (c.segs.length > 1 ? ' in ' + c.segs.length + ' Abschnitten' : '') : ' · nie am ' + lbl;
+            $('ev_cmeta').innerHTML = meta;
+
+            var tot = expand(c.total, n), ser = c.series.map(function (x) { return { s: x, v: expand(x.pts, n) }; });
+            var cum = [], lo = new Array(n).fill(0), top = 0;
+            ser.forEach(function (x) {
+                var up = lo.map(function (v, i) { return Math.round((v + x.v[i]) * 100) / 100; });
+                cum.push({ s: x.s, lo: lo, up: up });
+                lo = up;
+            });
+            lo.concat(tot).forEach(function (v) { if (v > top) top = v; });
+            var W = Math.max(260, el.clientWidth), H = 230, L = 40, R = lim ? 78 : 8, T = 18, B = 20, pw = W - L - R, ph = H - T - B;
+            var max = niceMax(Math.max(top, lim ? lim * 1.08 : 0));
+            var x = function (m) { return +(L + m / c.len * pw).toFixed(1); };
+            var y = function (v) { return +(T + ph - v / max * ph).toFixed(1); };
+            var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" height="' + H + '" role="img" aria-label="Lastverlauf ' + esc(c.label) + ' am ' + dmy(c.day) + '">';
+            for (var g = 0; g <= 4; g++) {
+                var gv = max / 4 * g, gy = y(gv);
+                s += '<line class="' + (g ? 'gl' : 'bl') + '" x1="' + L + '" x2="' + (L + pw) + '" y1="' + gy + '" y2="' + gy + '"/>';
+                s += '<text x="' + (L - 6) + '" y="' + (gy + 3) + '" text-anchor="end">' + (max >= 10 ? NF0.format(gv) : NF1.format(gv)) + '</text>';
+            }
+            s += '<text x="' + (L - 6) + '" y="' + (T - 6) + '" text-anchor="end">kW</text>';
+            // Zeiten am Limit: neutrales Band, Dauer darüber (bei schmalen Abschnitten nur im Tooltip)
+            var lastRight = -1;
+            c.segs.forEach(function (g) {
+                var x0 = x(g[0]), x1 = x(g[1]), mid = (x0 + x1) / 2, t = '▲ ' + fmin(g[1] - g[0]);
+                s += '<rect class="seg" x="' + x0 + '" y="' + T + '" width="' + Math.max(1, x1 - x0) + '" height="' + ph + '"/>';
+                var tw = t.length * 5.6;
+                if (mid - tw / 2 > lastRight + 4 && mid - tw / 2 >= L - 10 && mid + tw / 2 <= W) {
+                    s += '<text class="budt" x="' + mid + '" y="' + (T - 6) + '" text-anchor="middle">' + t + '</text>';
+                    lastRight = mid + tw / 2;
+                }
+            });
+            // gestapelte Ladepunkte, darüber die Gesamtleistung
+            cum.forEach(function (k) {
+                s += '<path d="' + stepTop(k.up, x, y) + stepBack(k.lo, x, y) + '" style="fill:' + serColor(k.s.slot) + '" fill-opacity=".88"/>';
+            });
+            cum.forEach(function (k, i) { if (i < cum.length - 1) s += '<path class="sep" d="' + stepTop(k.up, x, y) + '"/>'; });
+            s += '<path class="tot" d="' + stepTop(tot, x, y) + '"/>';
+            if (lim) {
+                var by = y(lim);
+                s += '<line class="bud" x1="' + L + '" x2="' + (L + pw) + '" y1="' + by + '" y2="' + by + '"/>';
+                s += '<text class="budt" x="' + (L + pw + 6) + '" y="' + (by + 3) + '">' + esc(lbl) + '</text>';
+                s += '<text x="' + (L + pw + 6) + '" y="' + (by + 15) + '">' + NF1.format(lim) + ' kW</text>';
+            }
+            var step = pw < 260 ? 12 : pw < 480 ? 6 : 3;   // Stundenmarken ohne Überlappung
+            for (var hh = 0; hh <= 24; hh += step) {
+                var dt = ts(c.day); dt.setHours(hh, 0, 0, 0);
+                var mx = (dt.getTime() / 1000 - c.day) / 60;
+                s += '<line class="gl" x1="' + x(mx) + '" x2="' + x(mx) + '" y1="' + (T + ph) + '" y2="' + (T + ph + 4) + '"/>';
+                s += '<text x="' + x(mx) + '" y="' + (H - 4) + '" text-anchor="' + (hh === 0 ? 'start' : hh === 24 ? 'end' : 'middle') + '">' + p2(hh % 24) + ':00</text>';
+            }
+            if (c.peak) {
+                var px = x(c.peak.m + 0.5), py = y(c.peak.kw), pt = NF1.format(c.peak.kw) + ' kW · ' + hm(c.day + c.peak.m * 60);
+                var right = px < L + pw - 110;
+                s += '<circle class="pk" cx="' + px + '" cy="' + py + '" r="4"/>';
+                s += '<text class="pkt" x="' + (right ? px + 8 : px - 8) + '" y="' + Math.max(T + 10, py - 8) + '" text-anchor="' + (right ? 'start' : 'end') + '">' + pt + '</text>';
+            }
+            s += '<line class="xh" id="ev_cxh" x1="0" x2="0" y1="' + T + '" y2="' + (T + ph) + '" visibility="hidden"/>';
+            s += '<rect class="hit" x="' + L + '" y="' + T + '" width="' + pw + '" height="' + ph + '"/>';
+            el.innerHTML = s + '</svg>';
+
+            // Fadenkreuz: eine Anzeige mit allen Ladepunkten zur Minute unter dem Zeiger
+            var svg = el.firstChild, xh = $('ev_cxh');
+            el.onmousemove = el.onclick = function (ev) {
+                var rb = svg.getBoundingClientRect(), sx = (ev.clientX - rb.left) * W / rb.width;
+                if (sx < L || sx > L + pw) { xh.setAttribute('visibility', 'hidden'); tip.hidden = true; return; }
+                var m = Math.min(n - 1, Math.max(0, Math.floor((sx - L) / pw * c.len)));
+                if (m >= n) { tip.hidden = true; return; }
+                xh.setAttribute('x1', x(m + 0.5)); xh.setAttribute('x2', x(m + 0.5)); xh.setAttribute('visibility', 'visible');
+                var h = '<b>' + hm(c.day + m * 60) + ' Uhr · ' + NF1.format(tot[m]) + ' kW</b>';
+                ser.forEach(function (k) { h += '<div class="r"><span><i class="sw" style="background:' + serColor(k.s.slot) + '"></i>' + esc(k.s.name) + '</span><span>' + NF1.format(k.v[m]) + ' kW</span></div>'; });
+                c.segs.forEach(function (g) { if (m >= g[0] && m < g[1]) h += '<div class="m">▲ am ' + esc(lbl) + ' ' + hm(c.day + g[0] * 60) + '–' + hm(c.day + g[1] * 60) + ' Uhr, ' + fmin(g[1] - g[0]) + '</div>'; });
+                placeTip(ev, h);
+            };
+            el.onmouseleave = function () { xh.setAttribute('visibility', 'hidden'); tip.hidden = true; };
+
+            $('ev_cleg').innerHTML = c.series.map(function (x) { return '<span><i style="background:' + serColor(x.slot) + '"></i>' + esc(x.name) + '</span>'; }).join('') +
+                '<span><i class="ln"></i>Gesamt (Höchstwert je Minute)</span>' + (lim ? '<span><i class="bd"></i>▲ Zeit am ' + esc(lbl) + '</span>' : '');
+
+            // Aufteilung: wer hat zur Spitze wie viel gezogen
+            if (!c.peak) { $('ev_cbrk').innerHTML = ''; return; }
+            var rows = c.breakdown.slice().sort(function (a, b) { return (b.kw || 0) - (a.kw || 0); });
+            var withLim = lim && c.limitMin;
+            var sum = function (k) { return rows.reduce(function (a, r) { return a + (r[k] || 0); }, 0); };
+            var head = '<tr><th>Ladepunkt</th><th>zur Spitze</th><th>Anteil</th>' + (withLim ? '<th>Ø am ' + esc(lbl) + '</th>' : '') + '<th>Energie am Tag</th></tr>';
+            var body = rows.map(function (r) {
+                return '<tr><td><i class="ev-sw" style="background:' + serColor(r.slot) + '"></i>' + esc(r.name) + '</td><td>' + (r.kw == null ? '–' : NF1.format(r.kw) + ' kW') + '</td><td>' + pct(r.share) + '</td>' +
+                    (withLim ? '<td>' + (r.avgLimit == null ? '–' : NF1.format(r.avgLimit) + ' kW') + '</td>' : '') + '<td>' + kwh(r.kwh) + ' kWh</td></tr>';
+            }).join('');
+            var foot = '<tr><td>Summe</td><td>' + NF1.format(sum('kw')) + ' kW</td><td>100 %</td>' + (withLim ? '<td>' + NF1.format(sum('avgLimit')) + ' kW</td>' : '') + '<td>' + kwh(sum('kwh')) + ' kWh</td></tr>';
+            $('ev_cbrk').innerHTML = '<div class="cap">Aufteilung zur Spitze um ' + hm(c.day + c.peak.m * 60) + ' Uhr (Ø der Minute je Ladepunkt)' + (withLim ? ' und während der Zeit am ' + esc(lbl) : '') + '</div>' +
+                '<div class="ev-tbl"><table><thead>' + head + '</thead><tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
         }
 
         function renderTable(d) {
@@ -453,12 +652,12 @@
             root.classList.remove('busy');
             evTheme();
             root.classList.toggle('wide', root.clientWidth >= 820);
-            renderHead(d); renderKpis(d); renderEnergy(d); renderHeat(d); renderPeaks(d); renderTable(d);
+            renderHead(d); renderKpis(d); renderEnergy(d); renderHeat(d); renderPeaks(d); renderCurve(d.curve); renderTable(d);
         }
         function redraw() {
             if (!data) return;
             root.classList.toggle('wide', root.clientWidth >= 820);
-            renderEnergy(data); renderHeat(data); renderPeaks(data);
+            renderEnergy(data); renderHeat(data); renderPeaks(data); renderCurve(curve);
         }
 
         // ---------- Bedienung ----------
@@ -466,6 +665,8 @@
         $('ev_prev').addEventListener('click', function () { setView({ off: view.off - 1 }); });
         $('ev_next').addEventListener('click', function () { if (view.off < 0) setView({ off: view.off + 1 }); });
         $('ev_scope').addEventListener('change', function () { setView({ scope: this.value }); });
+        $('ev_cprev').addEventListener('click', function () { if (curve && curve.prev != null) askDay(curve.scope, curve.prev); });
+        $('ev_cnext').addEventListener('click', function () { if (curve && curve.next != null) askDay(curve.scope, curve.next); });
         $('ev_hseg').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b && data) { heatMode = b.getAttribute('data-h'); tip.hidden = true; renderHeat(data); } });
         $('ev_csv').addEventListener('click', function () { var p = $('ev_csvp'); p.hidden = !p.hidden; this.setAttribute('aria-expanded', String(!p.hidden)); });
         $('ev_csvmake').addEventListener('click', function () {
@@ -477,7 +678,7 @@
         root.addEventListener('click', function (e) {
             var b = e.target.closest('[data-scope]'); if (b && root.contains(b)) { setView({ scope: b.getAttribute('data-scope') }); return; }
             var tr = e.target.closest('tr[data-drill]'); if (tr) { setView({ scope: tr.getAttribute('data-drill') }); return; }
-            var th = e.target.closest('.ev-tbl th'); if (th && data) {
+            var th = e.target.closest('#ev_table th'); if (th && data) {
                 var k = th.getAttribute('data-k');
                 if (sort.col === k) sort.dir = -sort.dir; else { sort.col = k; sort.dir = k === 'label' ? 1 : -1; }
                 renderTable(data);
@@ -499,7 +700,7 @@
             if (depth > 3) return null;
             if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return null; } return parse(d, depth + 1); }
             if (!d || typeof d !== 'object') return null;
-            if (d.ev === 'report' || d.ev === 'csv') return d;
+            if (d.ev === 'report' || d.ev === 'csv' || d.ev === 'day') return d;
             var keys = ['data', 'value', 'payload'];
             for (var i = 0; i < keys.length; i++) { if (d[keys[i]] !== undefined) return parse(d[keys[i]], depth + 1); }
             return null;
@@ -509,6 +710,7 @@
             if (!m || (m.cid && m.cid !== cid)) return;
             try {
                 if (m.ev === 'report' && m.data && Array.isArray(m.data.energy)) render(m.data);
+                else if (m.ev === 'day') renderCurve(m.data || null);
                 else if (m.ev === 'csv') {
                     root.classList.remove('busy');
                     var a = $('ev_csvlink');

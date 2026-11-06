@@ -9,7 +9,7 @@ require_once __DIR__ . '/lib/EVArchiveReader.php';
  * EV Auswertung - IP-Symcon Modul
  * -------------------------------
  * Nimmt Minuten-Datensaetze und Live-Staende der EV Datensammler an (lokal per EVAW_Ingest,
- * ab Etappe 2 auch per WebHook), schreibt sie in eigene Archiv-Variablen je Standort und
+ * von anderen Symcon und EV Standort-Agenten per WebHook /hook/evauswertung/ingest), schreibt sie in eigene Archiv-Variablen je Standort und
  * Ladepunkt und zeigt sie in einer HTML-SDK-Kachel aus: Energie, Ladevorgaenge, Auslastung
  * (belegt und davon aktiv geladen), Heatmap, Leistungsspitzen und CSV-Export.
  */
@@ -27,6 +27,7 @@ class EVAnalytics extends IPSModule
         $this->RegisterPropertyInteger('BizFrom', 7);
         $this->RegisterPropertyInteger('BizTo', 18);
         $this->RegisterPropertyInteger('OfflineAfter', 60);
+        $this->RegisterPropertyString('RemoteSites', '[]');   // Standorte, die per WebHook liefern duerfen: Site, Key, Active
 
         $this->RegisterAttributeString('Sites', '{}');       // Struktur je Standort inkl. Variablen-IDs
         $this->RegisterAttributeString('SiteState', '{}');   // je Standort: lastSeq, metaHash, Zeitpunkt der letzten Lieferung
@@ -123,6 +124,20 @@ class EVAnalytics extends IPSModule
             }
         }
         unset($a);
+        // neue Zeile in der Freigabeliste bekommt gleich einen zufälligen Schlüssel
+        foreach ($form['elements'] as &$el) {
+            foreach ($el['items'] ?? [] as $k => $it) {
+                if (($it['name'] ?? '') === 'RemoteSites') {
+                    foreach ($el['items'][$k]['columns'] as &$col) {
+                        if ($col['name'] === 'Key') {
+                            $col['add'] = bin2hex(random_bytes(16));
+                        }
+                    }
+                    unset($col);
+                }
+            }
+        }
+        unset($el);
         return json_encode($form);
     }
 
@@ -211,9 +226,20 @@ class EVAnalytics extends IPSModule
             'varP' => $this->EnsureVar($cat, $this->Ident($site) . '_P', 2, 'Leistung Standort', 'EVAW.kW', 0, 1),
             'saeulen' => []
         ];
+        // Ja/Nein "am Budget" für die Dauer der Spitzen; bei Bestand beim Aufräumen einmalig nachrechnen (FillDerived)
+        $identX = $this->Ident($site) . '_X';
+        $newX = @IPS_GetObjectIDByIdent($identX, $cat) === false;
+        $out['varX'] = $this->EnsureVar($cat, $identX, 0, 'Am Budget', '~Switch', 0, 2);
+        if ($newX && !empty($old)) {
+            $out['xFill'] = time();
+        } elseif (isset($old['xFill'])) {
+            $out['xFill'] = (int) $old['xFill'];
+        }
         // Angaben, die nur die Auswertung kennt (z. B. Beginn der übernommenen Historie), bleiben erhalten
         $oldPoints = [];
+        $oldSaeulen = [];
         foreach ($old['saeulen'] ?? [] as $os) {
+            $oldSaeulen[$os['id']] = $os;
             foreach ($os['points'] ?? [] as $op) {
                 $oldPoints[$op['id']] = $op;
             }
@@ -221,8 +247,16 @@ class EVAnalytics extends IPSModule
         $pos = 10;
         foreach ($meta['saeulen'] ?? [] as $sa) {
             $sid = (string) $sa['id'];
+            $identSX = $this->Ident($sid) . '_X';
+            $newSX = @IPS_GetObjectIDByIdent($identSX, $cat) === false;
             $o = ['id' => $sid, 'name' => (string) ($sa['name'] ?? $sid), 'limitKw' => isset($sa['limitKw']) ? (float) $sa['limitKw'] : null,
-                'varP' => $this->EnsureVar($cat, $this->Ident($sid) . '_P', 2, $sa['name'] . ' · Leistung Säule', 'EVAW.kW', 0, $pos++), 'points' => []];
+                'varP' => $this->EnsureVar($cat, $this->Ident($sid) . '_P', 2, $sa['name'] . ' · Leistung Säule', 'EVAW.kW', 0, $pos++),
+                'varX' => $this->EnsureVar($cat, $identSX, 0, $sa['name'] . ' · Am Säulen-Limit', '~Switch', 0, $pos++), 'points' => []];
+            if ($newSX && isset($oldSaeulen[$sid])) {
+                $o['xFill'] = time();
+            } elseif (isset($oldSaeulen[$sid]['xFill'])) {
+                $o['xFill'] = (int) $oldSaeulen[$sid]['xFill'];
+            }
             foreach ($sa['points'] ?? [] as $p) {
                 $pid = (string) $p['id'];
                 $label = $sa['name'] . ' · ' . $p['name'];
@@ -235,7 +269,7 @@ class EVAnalytics extends IPSModule
                     'varP' => $this->EnsureVar($cat, $this->Ident($pid) . '_P', 2, $label . ' · Leistung', 'EVAW.kW', 0, $pos++),
                     'varL' => $this->EnsureVar($cat, $identL, 0, $label . ' · Lädt aktiv', '~Switch', 0, $pos++)
                 ] + (isset($oldPoints[$pid]['histFrom']) ? ['histFrom' => (int) $oldPoints[$pid]['histFrom']] : []);
-                // Ladepunkt mit Daten aus der Zeit vor "Lädt aktiv": beim Aufräumen einmalig nachrechnen (FillCharging)
+                // Ladepunkt mit Daten aus der Zeit vor "Lädt aktiv": beim Aufräumen einmalig nachrechnen (FillDerived)
                 if ($newL && isset($oldPoints[$pid])) {
                     $pt['lFill'] = time();
                 } elseif (isset($oldPoints[$pid]['lFill'])) {
@@ -277,10 +311,16 @@ class EVAnalytics extends IPSModule
             }
             if (isset($r['s'][$sa['id']])) {
                 $put($sa['varP'], (float) $r['s'][$sa['id']]);
+                if (!empty($sa['limitKw'])) {
+                    $put($sa['varX'] ?? 0, (float) $r['s'][$sa['id']] >= EVReport::LIMIT_HIT * $sa['limitKw']);
+                }
             }
         }
         if (isset($r['site'])) {
             $put($site['varP'], (float) $r['site']);
+            if (!empty($site['budgetKw'])) {
+                $put($site['varX'] ?? 0, (float) $r['site'] >= EVReport::LIMIT_HIT * $site['budgetKw']);
+            }
         }
     }
 
@@ -344,7 +384,7 @@ class EVAnalytics extends IPSModule
 
     private function DoHousekeeping()
     {
-        $this->FillCharging();
+        $this->FillDerived();
         $todo = $this->ReadJson('Reagg');
         $ac = $this->ArchiveID();
         $keep = [];
@@ -374,16 +414,18 @@ class EVAnalytics extends IPSModule
         $this->WriteJson('CsvTokens', $tokens);
     }
 
-    /** Bestand auf den aktuellen Aufbau bringen, z. B. Variable "Lädt aktiv" für Standorte von vor Version 1.2 */
+    /** Bestand auf den aktuellen Aufbau bringen: "Lädt aktiv" (ab 1.2), "am Budget" je Standort und Säule (ab 1.3) */
     private function UpgradeSites()
     {
         $this->Locked(function () {
             $sites = $this->ReadJson('Sites');
             $changed = false;
             foreach ($sites as $code => $site) {
+                $missing = empty($site['varX']);
                 foreach ($site['saeulen'] ?? [] as $sa) {
+                    $missing = $missing || empty($sa['varX']);
                     foreach ($sa['points'] ?? [] as $p) {
-                        if (empty($p['varL'])) {
+                        if ($missing || empty($p['varL'])) {
                             // die gespeicherte Struktur hat alle Felder, die der Datensammler sonst liefert
                             $sites[$code] = $this->EnsureSite((string) $code, $site, $site);
                             $changed = true;
@@ -399,23 +441,41 @@ class EVAnalytics extends IPSModule
     }
 
     /**
-     * "Lädt aktiv" für die Zeit vor der Variable einmalig aus Belegt und Leistung nachrechnen,
-     * höchstens drei Ladepunkte je Lauf. Den Status des Lastmanagements gibt es rückwirkend nicht,
-     * auch nicht den beim Verbindungsausfall gehaltenen Zustand; solche Minuten zählen hier nicht als geladen.
+     * Abgeleitete Ja/Nein-Variablen für die Zeit vor ihrer Einführung einmalig nachrechnen, höchstens drei je Lauf:
+     * "Lädt aktiv" aus Belegt und Leistung, "am Budget"/"am Säulen-Limit" aus der Leistung und dem heutigen Limit.
+     * Den Status des Lastmanagements gibt es rückwirkend nicht, auch nicht den beim Verbindungsausfall gehaltenen
+     * Zustand; solche Minuten zählen hier nicht als geladen.
      */
-    private function FillCharging()
+    private function FillDerived()
     {
         $sites = $this->ReadJson('Sites');
         $reader = new EVArchiveReader($this->ArchiveID());
         $late = [];
         $done = 0;
+        $limit = function (array &$o, ?float $limitKw, int $from) use ($reader, &$late, &$done) {
+            if (empty($o['xFill']) || $done >= 3) {
+                return;
+            }
+            $to = (int) $o['xFill'];
+            if ($limitKw && $to > $from && !empty($o['varX'])) {
+                $rows = EVStats::Above($reader->Values((int) $o['varP'], $from, $to), (float) ($reader->ValueBefore((int) $o['varP'], $from) ?? 0.0),
+                    EVReport::LIMIT_HIT * $limitKw);
+                if ($rows) {
+                    $late[(int) $o['varX']] = $rows;
+                }
+            }
+            unset($o['xFill']);
+            $done++;
+        };
         foreach ($sites as &$site) {
+            $from = (int) $site['detailSince'];
+            $limit($site, $site['budgetKw'] ?? null, $from);
             foreach ($site['saeulen'] as &$sa) {
+                $limit($sa, $sa['limitKw'] ?? null, $from);
                 foreach ($sa['points'] as &$p) {
                     if (empty($p['lFill']) || $done >= 3) {
                         continue;
                     }
-                    $from = (int) $site['detailSince'];
                     $to = (int) $p['lFill'];
                     if ($to > $from) {
                         $rows = EVStats::ChargingFrom(
@@ -470,6 +530,10 @@ class EVAnalytics extends IPSModule
             case 'View':
                 $this->UpdateVisualizationValue(json_encode(['ev' => 'report', 'cid' => $cid, 'data' => $this->Report($type, $off, $scope)]));
                 return;
+            case 'Day':
+                $day = EVReport::Day($this->ReadJson('Sites'), new EVArchiveReader($this->ArchiveID()), $scope, (int) ($v['day'] ?? 0), time());
+                $this->UpdateVisualizationValue(json_encode(['ev' => 'day', 'cid' => $cid, 'data' => $day]));
+                return;
             case 'Csv':
                 $mode = ($v['mode'] ?? '') === 'verlauf' ? 'verlauf' : 'summen';
                 $csv = $this->Locked(function () use ($type, $off, $scope, $mode) {
@@ -519,7 +583,12 @@ class EVAnalytics extends IPSModule
 
     protected function ProcessHookData()
     {
-        $tk = preg_replace('/[^a-f0-9]/', '', (string) ($_GET['t'] ?? ''));
+        $path = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+        if (substr(rtrim($path, '/'), -7) === '/ingest') {
+            $this->HookIngest();
+            return;
+        }
+        $tk =preg_replace('/[^a-f0-9]/', '', (string) ($_GET['t'] ?? ''));
         $tokens = $this->ReadJson('CsvTokens');
         $info = $tokens[$tk] ?? null;
         $file = $this->CsvFile($tk);
@@ -533,6 +602,56 @@ class EVAnalytics extends IPSModule
         header('Content-Disposition: attachment; filename="' . str_replace('"', '', $info['name']) . '"');
         header('Cache-Control: no-store');
         echo file_get_contents($file);
+    }
+
+    /**
+     * Lieferung eines entfernten Datensammlers (anderer Symcon oder EV Standort-Agent) per POST.
+     * Nur Standorte aus der Freigabeliste mit passendem Schlüssel (Kopf X-EV-Key) werden angenommen,
+     * ein Schlüssel gilt nur für sein eigenes Standortkürzel.
+     */
+    private function HookIngest()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        $deny = function (string $status, string $text) {
+            header('HTTP/1.1 ' . $status);
+            echo json_encode(['error' => $text]);
+        };
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'POST')) !== 'POST') {
+            $deny('405 Method Not Allowed', 'Nur POST');
+            return;
+        }
+        $body = (string) file_get_contents('php://input');
+        if ($body === '' || strlen($body) > 16 * 1024 * 1024) {
+            $deny('400 Bad Request', 'Leere oder zu große Lieferung');
+            return;
+        }
+        $in = json_decode($body, true);
+        $site = is_array($in) ? (string) ($in['site'] ?? '') : '';
+        $key = (string) ($_SERVER['HTTP_X_EV_KEY'] ?? '');
+        if ($key === '' && preg_match('/^Bearer\s+(\S+)$/i', (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? ''), $m)) {
+            $key = $m[1];
+        }
+        if ($key === '' && is_array($in)) {
+            $key = (string) ($in['key'] ?? '');
+        }
+        if (is_array($in)) {
+            unset($in['key']);
+            $body = json_encode($in);
+        }
+        $ok = false;
+        foreach (json_decode($this->ReadPropertyString('RemoteSites'), true) ?: [] as $r) {
+            if (($r['Active'] ?? true) && (string) ($r['Site'] ?? '') === $site && strlen((string) ($r['Key'] ?? '')) >= 16) {
+                $ok = $key !== '' && hash_equals((string) $r['Key'], $key);
+                break;
+            }
+        }
+        if (!$ok) {
+            $this->SendDebug('WebHook', 'abgelehnt: ' . ($site !== '' ? $site : 'ohne Standort') . ' von ' . ($_SERVER['REMOTE_ADDR'] ?? '?'), 0);
+            $deny('403 Forbidden', 'Standort nicht freigegeben oder Schlüssel falsch');
+            return;
+        }
+        echo $this->Ingest($body);
     }
 
     public function Destroy()
