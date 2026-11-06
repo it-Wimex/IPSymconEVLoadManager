@@ -28,7 +28,7 @@ foreach (EVPeriod::TYPES as $type) {
     }
 }
 $days = [];
-foreach (['site:ADF', 'saeule:ADF:ADF-LS01', 'site:RGST', 'saeule:RGST:RGST-LS01'] as $sc) {
+foreach (['all', 'site:ADF', 'saeule:ADF:ADF-LS01', 'site:RGST', 'saeule:RGST:RGST-LS01'] as $sc) {
     for ($d = mktime(0, 0, 0, 10, 1, 2026); $d <= EVPeriod::Day0($now); $d = EVPeriod::AddDays($d, 1)) {
         $days[$sc . '|' . $d] = EVReport::Day($meta, $r, $sc, $d, $now);
     }
@@ -40,6 +40,18 @@ $tile = str_replace('%%INITIAL%%', json_encode($init), $tile);
 $stub = '<script>
 var EV_VIEWS = ' . json_encode($views) . ';
 var EV_DAYS = ' . json_encode($days) . ';
+window.addEventListener("load", function () {
+  var h = decodeURIComponent(location.hash.slice(1)); if (!h) return;
+  var o = {}; h.split("&").forEach(function (kv) { var i = kv.indexOf("="); o[kv.slice(0, i)] = kv.slice(i + 1); });
+  setTimeout(function () {
+    if (o.scope) { var sel = document.getElementById("ev_scope"); sel.value = o.scope; sel.dispatchEvent(new Event("change")); }
+    setTimeout(function () {
+      var hits = document.querySelectorAll((o.scope && o.scope !== "all" ? "#ev_peak" : "#ev_pdays") + " .hit"), el = hits[+o.bar || 0];
+      if (el) { var r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: r.x + 2, clientY: r.y + 2 })); }
+      setTimeout(function () { var c = document.getElementById("ev_curvecard"); if (c) window.scrollTo(0, c.getBoundingClientRect().top + window.scrollY - 10); document.getElementById("ev_tip").hidden = true; }, 400);
+    }, 400);
+  }, 200);
+});
 function requestAction(ident, value) {
   var v = JSON.parse(value);
   setTimeout(function () {

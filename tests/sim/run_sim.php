@@ -274,11 +274,15 @@ check('Antwort trägt die Kennung der Kachel', $ask('View', ['type' => 'woche', 
 
 $m = $ask('View', ['type' => 'monat', 'off' => 0, 'scope' => 'site:ADF'])['data'];
 check('Oktober Arensdorf: Historie 1.–11.10. plus Betrieb', $m['kpi']['kwh'], 11 * 20 + $l1kwh + $l3kwh, 0.6);
-$cv = $m['curve'];
-check('Lastverlauf Arensdorf: Spitzentag', $cv['day'], $S + 86400);
+$cv = $ask('Day', ['scope' => 'site:ADF', 'day' => $S + 86400])['data'];
+check('Lastverlauf Arensdorf: zweiter Tag', $cv['day'], $S + 86400);
 check('Lastverlauf Arensdorf: eine Stunde am Budget', $cv['limitMin'], 60, 1);
-check('Lastverlauf Arensdorf: zur Spitze je 11 kW von links (Säule 1) und Säule 2', array_map('floatval', array_column($cv['breakdown'], 'kw')), [11.04, 0.0, 11.04]);
-check('Lastverlauf Arensdorf: Säule 2 hat eigene Farbe', array_column($cv['series'], 'slot'), [0, 1, 2]);
+check('Lastverlauf Arensdorf: zur Spitze je 11 kW von links (Säule 1) und Säule 2', array_map('floatval', array_column($cv['lanes'], 'atPeak')), [11.04, 0.0, 11.04]);
+check('Lastverlauf Arensdorf: drei Zeilen mit eigener Farbe', array_column($cv['lanes'], 'slot'), [0, 1, 2]);
+$ca = $ask('Day', ['scope' => 'all', 'day' => $S + 86400])['data'];
+check('Lastverlauf Alle: eine Zeile je Standort', array_column($ca['lanes'], 'id'), ['ADF', 'RGST']);
+check('Lastverlauf Alle: Arensdorf eine Stunde am Budget', $ca['lanes'][0]['limitMin'], 60, 1);
+check('Bericht ohne Lastverlauf', array_key_exists('curve', $m), false);
 $dayAsk = $ask('Day', ['scope' => 'site:ADF', 'day' => $S]);
 check('Lastverlauf: anderer Tag auf Anfrage', [$dayAsk['ev'], $dayAsk['data']['day'], $dayAsk['data']['limitMin']], ['day', $S, 0]);
 check('Oktober Arensdorf: Säule 1 · links vorn', $m['rows'][0]['label'], 'Säule 1 · links');
