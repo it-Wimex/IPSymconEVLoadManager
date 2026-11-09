@@ -108,6 +108,10 @@ eine Saeule.
 - Kachel mit Zeitraum (Woche, Monat, Jahr, 12 Monate), Auswahl und CSV-Export.
   Der CSV-Link laeuft ueber `/hook/evauswertung/csv` und gilt 5 Minuten.
 - Geschaeftszeiten fuer die Auslastung einstellbar (Standard Mo-Fr 7-18 Uhr).
+- Neue Ansicht (Vorschau, `view2.html`) mit Tabs Uebersicht, Energie, Belegung, Leistung & Budget,
+  Ladevorgaenge und Ladepunkte. Einstellung „Darstellung der Kachel“: umschaltbar (Standard,
+  Schalter oben in der Kachel, jedes Geraet merkt sich die Wahl), nur klassisch oder nur neu.
+  Zusammengesetzt wird die Kachel in `lib/EVTile.php`.
 - Zaehlervariablen ignorieren Nullwerte in der Aggregation (AC_SetCounterIgnoreZeros), sonst
   zaehlte der beim Anlegen geloggte Anfangswert 0 den ganzen Zaehlerstand als Verbrauch.
   Bestehende Variablen werden beim Uebernehmen umgestellt und neu aggregiert; Knopf

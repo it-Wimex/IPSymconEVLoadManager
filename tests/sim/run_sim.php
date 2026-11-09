@@ -28,7 +28,7 @@ function loadSim(string $file)
     eval('namespace Sim; ' . $code);
 }
 foreach (['EVDataCollector/lib/EVCounter.php', 'EVDataCollector/lib/EVSource.php', 'EVDataCollector/lib/EVMinute.php',
-    'EVAnalytics/lib/EVPeriod.php', 'EVAnalytics/lib/EVStats.php', 'EVAnalytics/lib/EVReport.php', 'EVAnalytics/lib/EVArchiveReader.php',
+    'EVAnalytics/lib/EVPeriod.php', 'EVAnalytics/lib/EVStats.php', 'EVAnalytics/lib/EVReport.php', 'EVAnalytics/lib/EVArchiveReader.php', 'EVAnalytics/lib/EVTile.php',
     'EVAnalytics/module.php', 'EVDataCollector/module.php'] as $f) {
     loadSim($root . '/' . $f);
 }
@@ -307,6 +307,11 @@ check('CSV: falscher Link abgelehnt', strpos(out(function () use ($mW) {
 }), 'abgelaufen') !== false, true);
 
 check('Kachel startet mit Bericht', strpos($mW->GetVisualizationTile(), '"ev":"report"') !== false, true);
+$tile = $mW->GetVisualizationTile();
+check('Kachel umschaltbar: beide Ansichten und Schalter, Startwerte eingesetzt', [strpos($tile, 'id="ev"') !== false, strpos($tile, 'id="v2"') !== false, strpos($tile, 'class="evsw"') !== false, strpos($tile, '%%INITIAL%%')], [true, true, true, false]);
+$classic = EVTile::Compose($root . '/EVAnalytics', EVTile::CLASSIC, '{}', 1);
+$neu = EVTile::Compose($root . '/EVAnalytics', EVTile::NEU, '{}', 1);
+check('Kachel klassisch bzw. neu: nur eine Ansicht, kein Schalter', [strpos($classic, 'id="v2"'), strpos($classic, 'evsw'), strpos($neu, 'id="ev"'), strpos($neu, 'evsw'), strpos($neu, 'id="v2"') !== false], [false, false, false, false, true]);
 check('Formular Auswertung', count(json_decode($mW->GetConfigurationForm(), true)['actions'][0]['values']), 2);
 check('Formular Datensammler', count(json_decode($mA->GetConfigurationForm(), true)['actions'][0]['values']), 3);
 

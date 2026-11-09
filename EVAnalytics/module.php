@@ -4,6 +4,7 @@ require_once __DIR__ . '/lib/EVPeriod.php';
 require_once __DIR__ . '/lib/EVStats.php';
 require_once __DIR__ . '/lib/EVReport.php';
 require_once __DIR__ . '/lib/EVArchiveReader.php';
+require_once __DIR__ . '/lib/EVTile.php';
 
 /**
  * EV Auswertung - IP-Symcon Modul
@@ -28,6 +29,7 @@ class EVAnalytics extends IPSModule
         $this->RegisterPropertyInteger('BizTo', 18);
         $this->RegisterPropertyInteger('OfflineAfter', 60);
         $this->RegisterPropertyString('RemoteSites', '[]');   // Standorte, die per WebHook liefern duerfen: Site, Key, Active
+        $this->RegisterPropertyInteger('Layout', EVTile::SWITCHABLE);   // Darstellung der Kachel: klassisch, neu oder umschaltbar
 
         $this->RegisterAttributeString('Sites', '{}');       // Struktur je Standort inkl. Variablen-IDs
         $this->RegisterAttributeString('SiteState', '{}');   // je Standort: lastSeq, metaHash, Zeitpunkt der letzten Lieferung
@@ -506,13 +508,8 @@ class EVAnalytics extends IPSModule
 
     public function GetVisualizationTile()
     {
-        $html = @file_get_contents(__DIR__ . '/module.html');
-        if ($html === false) {
-            return '<div style="padding:8px">module.html fehlt.</div>';
-        }
-        $init = ['ev' => 'report', 'data' => $this->Report('monat', 0, 'all')];
-        $json = json_encode($init);
-        return str_replace('%%INITIAL%%', $json === false ? '{}' : $json, $html);
+        $json = json_encode(['ev' => 'report', 'data' => $this->Report('monat', 0, 'all')]);
+        return EVTile::Compose(__DIR__, $this->ReadPropertyInteger('Layout'), $json === false ? '{}' : $json, $this->InstanceID);
     }
 
     public function RequestAction($Ident, $Value)

@@ -179,7 +179,7 @@ final class EVReport
         // ---- Energie, Belegung je Ladepunkt
         $energy = [];
         foreach ($P['buckets'] as $b) {
-            $energy[] = ['x' => $b['x'], 't' => $b['t'], 'kwh' => 0.0, 'by' => [], 'ses' => 0,
+            $energy[] = ['x' => $b['x'], 't' => $b['t'], 's' => $b['s'], 'kwh' => 0.0, 'by' => [], 'ses' => 0,
                 'future' => $b['s'] > $now, 'nodata' => true, 'detail' => false];
         }
         $acc = [];
@@ -276,7 +276,7 @@ final class EVReport
         $peakDays = 0;
         foreach ($P['buckets'] as $b) {
             // Alle Standorte: 'pct' = höchste Auslastung des Budgets eines Standorts an diesem Tag, 'site' = welcher
-            $peaks[] = ['x' => $b['x'], 't' => $b['t'], 'kw' => null, 'pct' => null, 'site' => null, 'at' => null, 'day' => null,
+            $peaks[] = ['x' => $b['x'], 't' => $b['t'], 's' => $b['s'], 'kw' => null, 'pct' => null, 'site' => null, 'at' => null, 'day' => null,
                 'limitDays' => 0, 'limitSec' => null, 'days' => 0];
         }
         if ($sc['level'] === 'all') {

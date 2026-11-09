@@ -1,0 +1,719 @@
+<style>
+    /* Neue Ansicht der Auswertung (Vorschau). Alles unter .ev2 bzw. v2_, damit sie neben der klassischen Ansicht laufen kann.
+       Hell/Dunkel folgt dem Symcon-Design wie die klassische Ansicht (--card-color, --content-color). */
+    .ev2 { --v-fb-bg: #ffffff; --v-fb-text: #1f2933; --v-c-acc: #2F80ED; --v-c-lim: #F59E0B; }
+    @media (prefers-color-scheme: dark) { .ev2 { --v-fb-bg: #2b2d31; --v-fb-text: #f1f3f5; } }
+    .ev2 {
+        --v-bg: var(--card-color, var(--v-fb-bg)); --v-text: var(--content-color, var(--v-fb-text));
+        --v-muted: #6b7280; --v-lane: #f3f5f8; --v-line: #e8ebf0; --v-grid: #eef0f3; --v-base: #d1d5db;
+        --v-acc: var(--v-c-acc); --v-acc-wash: rgba(47, 128, 237, .13); --v-lim: var(--v-c-lim); --v-lim-ink: #92400e; --v-lim-wash: rgba(245, 158, 11, .16);
+        --v-up: #0f8a5f; --v-dn: #c2410c;
+    }
+    .ev2[data-theme="dark"] { --v-muted: #a1a7b0; --v-lane: #34363b; --v-line: #44474d; --v-grid: #3a3d42; --v-base: #55585f; --v-acc: #5b9bf0; --v-lim-ink: #fcd34d; --v-up: #34d399; --v-dn: #fb923c; }
+    @supports (color: color-mix(in srgb, red, blue)) {
+        .ev2 {
+            --v-muted: color-mix(in srgb, var(--v-text) 62%, var(--v-bg));
+            --v-lane: color-mix(in srgb, var(--v-text) 5%, var(--v-bg));
+            --v-line: color-mix(in srgb, var(--v-text) 11%, var(--v-bg));
+            --v-grid: color-mix(in srgb, var(--v-text) 7%, var(--v-bg));
+            --v-base: color-mix(in srgb, var(--v-text) 22%, var(--v-bg));
+            --v-acc: color-mix(in srgb, var(--v-c-acc) 84%, var(--v-text));
+            --v-acc-wash: color-mix(in srgb, var(--v-c-acc) 14%, transparent);
+            --v-lim: color-mix(in srgb, var(--v-c-lim) 90%, var(--v-text));
+            --v-lim-ink: color-mix(in srgb, var(--v-c-lim) 55%, var(--v-text));
+            --v-lim-wash: color-mix(in srgb, var(--v-c-lim) 17%, transparent);
+            --v-up: color-mix(in srgb, #10b981 70%, var(--v-text));
+            --v-dn: color-mix(in srgb, #f97316 72%, var(--v-text));
+        }
+    }
+    .ev2 { position: relative; font-family: Arial, Helvetica, sans-serif; color: var(--v-text); padding: 4px; font-size: 13px; line-height: 1.4; }
+    .ev2 * { box-sizing: border-box; }
+    .ev2 button { font: inherit; color: inherit; }
+    .ev2.busy .v2-body { opacity: .55; transition: opacity .2s; }
+    .v2-hd { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 16px; margin-bottom: 6px; }
+    .v2-title { font-size: 17px; font-weight: 700; }
+    .v2-crumb { display: flex; flex-wrap: wrap; gap: 2px 4px; font-size: 12px; margin-top: 2px; color: var(--v-muted); }
+    .v2-crumb button { border: 0; background: transparent; color: var(--v-acc); padding: 0; cursor: pointer; }
+    .v2-src { font-size: 11px; color: var(--v-muted); margin-top: 2px; }
+    .v2-note { font-size: 12px; color: var(--v-lim-ink); background: var(--v-lim-wash); border-radius: 8px; padding: 4px 8px; margin-top: 4px; }
+    .v2-ctl { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .v2-sel { font: inherit; font-size: 13px; color: var(--v-text); background: var(--v-bg); border: 1px solid var(--v-base); border-radius: 8px; padding: 5px 6px; max-width: 260px; }
+    .v2-seg { display: inline-flex; background: var(--v-lane); border-radius: 9px; padding: 2px; gap: 2px; }
+    .v2-seg button { border: 0; background: transparent; color: var(--v-muted); padding: 4px 9px; border-radius: 7px; cursor: pointer; font-size: 12px; }
+    .v2-seg button[aria-pressed="true"] { background: var(--v-bg); color: var(--v-text); font-weight: 700; box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
+    .v2-seg button:disabled { opacity: .45; cursor: not-allowed; }
+    .v2-step { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--v-base); border-radius: 8px; padding: 1px; }
+    .v2-step button { border: 0; background: transparent; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; font-size: 15px; }
+    .v2-step button:disabled { opacity: .3; cursor: default; }
+    .v2-step span { min-width: 92px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .v2-btn { border: 1px solid var(--v-base); background: var(--v-bg); border-radius: 8px; padding: 5px 11px; cursor: pointer; font-size: 12px; text-decoration: none; color: var(--v-text); }
+    .v2-csv { border: 1px solid var(--v-line); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 12px; }
+    .ev2 [hidden] { display: none !important; }
+    .v2-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--v-line); margin: 2px 0 12px; overflow-x: auto; scrollbar-width: none; }
+    .v2-tabs button { border: 0; background: transparent; padding: 8px 12px 9px; cursor: pointer; color: var(--v-muted); font-weight: 700; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; display: inline-flex; gap: 6px; align-items: center; }
+    .v2-tabs button[aria-selected="true"] { color: var(--v-text); border-bottom-color: var(--v-acc); }
+    .v2-tabs .b { font-size: 11px; background: var(--v-lim-wash); color: var(--v-lim-ink); border-radius: 999px; padding: 0 6px; }
+    .v2-grid { display: grid; gap: 12px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+    .v2-card { border: 1px solid var(--v-line); border-radius: 12px; padding: 12px 14px; min-width: 0; grid-column: span 12; }
+    .v2-card.c8 { grid-column: span 8; } .v2-card.c7 { grid-column: span 7; } .v2-card.c6 { grid-column: span 6; } .v2-card.c5 { grid-column: span 5; } .v2-card.c4 { grid-column: span 4; } .v2-card.c3 { grid-column: span 3; }
+    @media (max-width: 860px) { .v2-card.c8, .v2-card.c7, .v2-card.c6, .v2-card.c5, .v2-card.c4 { grid-column: span 12; } .v2-card.c3 { grid-column: span 6; } }
+    @media (max-width: 480px) { .v2-card.c3 { grid-column: span 12; } }
+    .v2-ch { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; align-items: baseline; margin-bottom: 8px; }
+    .v2-ch h4 { margin: 0; font-size: 14px; }
+    .v2-ch .m { color: var(--v-muted); font-size: 12px; }
+    .v2-expl { color: var(--v-muted); font-size: 12px; margin: -2px 0 10px; }
+    .v2-q { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--v-base); color: var(--v-muted); font-size: 10px; font-weight: 700; cursor: help; margin-left: 4px; }
+    .v2-kpi { cursor: pointer; }
+    .v2-kpi:hover { border-color: var(--v-base); background: var(--v-lane); }
+    .v2-kpi .l { color: var(--v-muted); font-size: 12px; display: flex; justify-content: space-between; gap: 6px; }
+    .v2-kpi .go { color: var(--v-acc); font-size: 11px; font-weight: 700; }
+    .v2-kpi .v { font-size: 25px; font-weight: 700; margin: 2px 0; font-variant-numeric: tabular-nums; }
+    .v2-kpi .v small { font-size: 13px; font-weight: 400; color: var(--v-muted); margin-left: 3px; }
+    .v2-kpi .s { color: var(--v-muted); font-size: 12px; }
+    .v2-kpi .s b { color: var(--v-text); }
+    .v2-kpi .up { color: var(--v-up); font-weight: 700; } .v2-kpi .dn { color: var(--v-dn); font-weight: 700; }
+    .v2-kpi.warn { background: var(--v-lim-wash); border-color: transparent; }
+    .v2-kpi.warn .v { color: var(--v-lim-ink); }
+    .v2-kpi.static { cursor: default; } .v2-kpi.static:hover { background: transparent; border-color: var(--v-line); }
+    .v2-bar2 { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--v-lane); margin: 6px 0 4px; }
+    .v2-bar2 i { display: block; height: 100%; }
+    .v2-h { background: repeating-linear-gradient(45deg, var(--v-acc) 0 1.5px, transparent 1.5px 4.5px); opacity: .75; }
+    .v2-ins { display: grid; gap: 7px; }
+    .v2-ins button { text-align: left; border: 1px solid var(--v-line); background: transparent; border-radius: 10px; padding: 8px 10px; cursor: pointer; display: grid; grid-template-columns: 24px 1fr auto; gap: 9px; align-items: center; }
+    .v2-ins button:hover { background: var(--v-lane); }
+    .v2-ins .ic { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--v-acc-wash); color: var(--v-acc); }
+    .v2-ins .ic.w { background: var(--v-lim-wash); color: var(--v-lim-ink); }
+    .v2-ins .a { color: var(--v-acc); font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .ev2 svg { display: block; width: 100%; overflow: visible; }
+    .ev2 svg text { font: 11px Arial, Helvetica, sans-serif; fill: var(--v-muted); }
+    .ev2 .gl { stroke: var(--v-grid); } .ev2 .bl { stroke: var(--v-base); }
+    .ev2 .bud { stroke: var(--v-lim); stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .ev2 .budt { fill: var(--v-lim-ink); font-weight: 700; }
+    .ev2 .xh { stroke: var(--v-text); stroke-opacity: .35; pointer-events: none; }
+    .ev2 .hit { fill: transparent; cursor: pointer; }
+    .ev2 .hit.nc { cursor: default; }
+    .v2-lg { display: flex; flex-wrap: wrap; gap: 5px 14px; font-size: 12px; color: var(--v-muted); margin-top: 8px; align-items: center; }
+    .v2-lg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+    .v2-lg .hh { background: repeating-linear-gradient(45deg, var(--v-muted) 0 1.5px, transparent 1.5px 4px); }
+    .v2-lg .ramp i { width: 14px; margin: 0 1px; border-radius: 2px; }
+    .v2-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .v2-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--v-line); border-radius: 999px; padding: 2px 10px 2px 6px; font-size: 12px; cursor: pointer; background: transparent; }
+    .v2-chip i { width: 10px; height: 10px; border-radius: 3px; }
+    .v2-chip.off { opacity: .4; }
+    .v2-soon { border: 1px dashed var(--v-base); border-radius: 12px; padding: 14px; color: var(--v-muted); font-size: 12.5px; grid-column: span 12; }
+    .v2-soon b { color: var(--v-text); }
+    .v2-x { border: 0; background: var(--v-lane); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; font-size: 15px; }
+    .v2-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--v-lim-wash); color: var(--v-lim-ink); border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: 12px; }
+    .v2-empty { color: var(--v-muted); padding: 18px 0; text-align: center; }
+    .v2-tbl { overflow-x: auto; }
+    .v2-tbl table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 640px; }
+    .v2-tbl th { text-align: right; font-weight: 400; font-size: 11.5px; color: var(--v-muted); padding: 6px 8px; border-bottom: 1px solid var(--v-line); white-space: nowrap; cursor: pointer; user-select: none; }
+    .v2-tbl th[aria-sort] { color: var(--v-text); }
+    .v2-tbl th:first-child, .v2-tbl td:first-child { text-align: left; }
+    .v2-tbl td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--v-line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .v2-tbl tbody tr[data-drill] { cursor: pointer; }
+    .v2-tbl tbody tr:hover td { background: var(--v-lane); }
+    .v2-tbl tfoot td { font-weight: 700; border-bottom: 0; }
+    .v2-tbl .sub { display: block; font-size: 11px; color: var(--v-muted); }
+    .v2-tbl .sw { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 7px; }
+    .v2-tbar { display: inline-flex; width: 80px; height: 7px; border-radius: 4px; background: var(--v-lane); overflow: hidden; vertical-align: middle; margin-left: 8px; }
+    .v2-tbar i { display: block; height: 100%; }
+    .v2-kv { display: grid; gap: 6px; font-size: 12.5px; margin-top: 10px; }
+    .v2-kv div { display: flex; justify-content: space-between; gap: 10px; }
+    .v2-kv span { color: var(--v-muted); }
+    .v2-tip { position: absolute; z-index: 6; pointer-events: none; background: var(--v-text); color: var(--v-bg); border-radius: 9px; padding: 7px 9px; font-size: 12px; line-height: 1.45; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); min-width: 150px; max-width: 280px; }
+    .v2-tip b { display: block; margin-bottom: 2px; }
+    .v2-tip .r { display: flex; justify-content: space-between; gap: 14px; }
+    .v2-tip .r i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+    .v2-tip .w { color: #fbbf24; margin-top: 3px; font-weight: 700; }
+    .v2-tip .m { opacity: .72; margin-top: 3px; }
+    @media (prefers-reduced-motion: reduce) { .ev2 * { transition: none !important; } }
+</style>
+<div class="ev2" id="v2">
+    <div class="v2-hd">
+        <div>
+            <div class="v2-title" id="v2_title">Auswertung Ladesäulen</div>
+            <div class="v2-crumb" id="v2_crumb"></div>
+            <div class="v2-src" id="v2_src"></div>
+            <div class="v2-note" id="v2_note" hidden></div>
+        </div>
+        <div class="v2-ctl">
+            <select class="v2-sel" id="v2_scope" aria-label="Auswahl: alle Standorte, Standort oder Säule"></select>
+            <div class="v2-seg" id="v2_per" role="group" aria-label="Zeitraum">
+                <button type="button" data-p="woche">Woche</button><button type="button" data-p="monat">Monat</button><button type="button" data-p="jahr">Jahr</button><button type="button" data-p="12m">12 Monate</button>
+            </div>
+            <div class="v2-step"><button type="button" id="v2_prev" aria-label="Vorheriger Zeitraum">‹</button><span id="v2_label"></span><button type="button" id="v2_next" aria-label="Nächster Zeitraum">›</button></div>
+            <button type="button" class="v2-btn" id="v2_csv" aria-expanded="false">Export</button>
+        </div>
+    </div>
+    <div class="v2-csv" id="v2_csvp" hidden>
+        <label><input type="radio" name="v2_csvmode" value="summen" checked> Summen je Ladepunkt</label>
+        <label><input type="radio" name="v2_csvmode" value="verlauf"> <span id="v2_csvverl">Je Tag und Ladepunkt</span></label>
+        <button type="button" class="v2-btn" id="v2_csvmake">Datei erzeugen</button>
+        <a class="v2-btn" id="v2_csvlink" href="#" target="_blank" rel="noopener" hidden>Herunterladen</a>
+        <span id="v2_csvmsg" style="color:var(--v-muted)">Gilt für die aktuelle Auswahl und den Zeitraum.</span>
+    </div>
+    <div class="v2-tabs" role="tablist" id="v2_tabs"></div>
+    <div class="v2-body" id="v2_body"></div>
+    <div class="v2-tip" id="v2_tip" hidden></div>
+</div>
+<script>
+    (function () {
+        'use strict';
+        var root = document.getElementById('v2'), tip = document.getElementById('v2_tip');
+        var cid = 'n' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+        var data = null, view = { type: 'monat', off: 0, scope: 'all' }, tab = 'over', day = null, dayOpen = false, pendingDay = null;
+        var st = { heat: 'b', heatWd: null, enOff: {}, ptSort: { col: 'kwh', dir: -1 } };
+        var SER_L = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+        var SER_D = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+        var NF0 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 }), NF1 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+        var WD = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], WDL = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+        var TABS = [['over', 'Übersicht'], ['energy', 'Energie'], ['occ', 'Belegung'], ['power', 'Leistung & Budget'], ['ses', 'Ladevorgänge'], ['pts', 'Ladepunkte']];
+
+        // ---------- Helfer ----------
+        function $(id) { return document.getElementById(id); }
+        function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+        function p2(n) { return (n < 10 ? '0' : '') + n; }
+        function ts(s) { return new Date(s * 1000); }
+        function kwh(v) { return v == null ? '–' : (v >= 100 ? NF0.format(v) : NF1.format(v)); }
+        function pct(v) { return v == null ? '–' : NF0.format(v * 100) + ' %'; }
+        function durH(h) { if (h == null) return '–'; return fmin(h * 60); }
+        function fmin(m) { m = Math.round(m); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + p2(m % 60) + ' min'; }
+        function hm(s) { var d = ts(s); return p2(d.getHours()) + ':' + p2(d.getMinutes()); }
+        function dm(s) { var d = ts(s); return d.getDate() + '.' + (d.getMonth() + 1) + '.'; }
+        function dmy(s) { var d = ts(s); return d.getDate() + '.' + (d.getMonth() + 1) + '.' + d.getFullYear(); }
+        function md(s) { var d = ts(s); return p2(d.getMonth() + 1) + '/' + d.getFullYear(); }
+        function wdOf(s) { return (ts(s).getDay() + 6) % 7; }
+        function dayName(s) { return WDL[wdOf(s)] + ', ' + dmy(s); }
+        function isDark() { var m = getComputedStyle(root).color.match(/[\d.]+/g); return !!m && (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255 > 0.5; }
+        function ser(i) { return i == null ? 'var(--v-muted)' : (isDark() ? SER_D : SER_L)[i % 8]; }
+        function op(v) { return (0.06 + 0.9 * Math.min(1, Math.max(0, v))).toFixed(3); }
+        function niceMax(v) { if (!(v > 0)) return 1; var p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; }
+        function tickStep(max) { var p = Math.pow(10, Math.floor(Math.log10(max))), c = [0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10]; for (var i = 0; i < c.length; i++) if (max / (c[i] * p) <= 5) return c[i] * p; return 10 * p; }
+        function sum(a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i] || 0; return s; }
+        function q(t) { return '<span class="v2-q" title="' + esc(t) + '">?</span>'; }
+        function W(el, min) { return Math.max(min || 260, el.clientWidth); }
+        function evTheme() {
+            if (window.CSS && CSS.supports && CSS.supports('color', 'color-mix(in srgb, red, blue)')) { root.removeAttribute('data-theme'); return; }
+            root.setAttribute('data-theme', isDark() ? 'dark' : 'light');
+        }
+        function placeTip(ev, h) {
+            tip.innerHTML = h; tip.hidden = false;
+            var rb = root.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+            var x = ev.clientX - rb.left + 14, y = ev.clientY - rb.top - th - 10;
+            if (x + tw > rb.width) x = ev.clientX - rb.left - tw - 14;
+            if (y < 0) y = ev.clientY - rb.top + 16;
+            tip.style.left = Math.max(0, x) + 'px'; tip.style.top = y + 'px';
+        }
+        function hideTip() { tip.hidden = true; }
+        // Treffer-Rechtecke (.hit mit data-*): Tooltip beim Überfahren, Aktion beim Klicken
+        function hits(el, tipFn, click) {
+            el.onmousemove = function (ev) { var t = ev.target; if (!t.classList || !t.classList.contains('hit')) { hideTip(); return; } var h = tipFn(t.dataset); if (h) placeTip(ev, h); else hideTip(); };
+            el.onmouseleave = hideTip;
+            el.onclick = function (ev) { var t = ev.target; if (!t.classList || !t.classList.contains('hit')) return; hideTip(); if (click) click(t.dataset); };
+        }
+        function hatch(id, color) { return '<pattern id="' + id + '" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" style="stroke:' + (color || 'var(--v-acc)') + '" stroke-width="2" stroke-opacity=".55"/></pattern>'; }
+        function yAxis(L, R, Wd, y, max, unit, fmt) {
+            var s = '', stp = tickStep(max);
+            for (var v = 0; v <= max + 1e-9; v += stp) {
+                var yy = y(v);
+                s += '<line class="' + (v ? 'gl' : 'bl') + '" x1="' + L + '" x2="' + (Wd - R) + '" y1="' + yy + '" y2="' + yy + '"/>';
+                s += '<text x="' + (L - 6) + '" y="' + (yy + 4) + '" text-anchor="end">' + (fmt ? fmt(v) : stp >= 1 ? NF0.format(v) : NF1.format(v)) + (v + stp > max + 1e-9 && unit ? ' ' + unit : '') + '</text>';
+            }
+            return s;
+        }
+        function smooth(pts) {
+            var n = pts.length, i; if (n < 3) return pts.map(function (q2, j) { return (j ? 'L' : 'M') + q2[0].toFixed(1) + ',' + q2[1].toFixed(1); }).join('');
+            var d = [], m = [];
+            for (i = 0; i < n - 1; i++) d.push((pts[i + 1][1] - pts[i][1]) / (pts[i + 1][0] - pts[i][0]));
+            m.push(d[0]); for (i = 1; i < n - 1; i++) m.push(d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2); m.push(d[n - 2]);
+            for (i = 0; i < n - 1; i++) { if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; } var a = m[i] / d[i], b = m[i + 1] / d[i], h = a * a + b * b; if (h > 9) { var t = 3 / Math.sqrt(h); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; } }
+            var s = 'M' + pts[0][0].toFixed(1) + ',' + pts[0][1].toFixed(1);
+            for (i = 0; i < n - 1; i++) { var dx = (pts[i + 1][0] - pts[i][0]) / 3; s += 'C' + (pts[i][0] + dx).toFixed(1) + ',' + (pts[i][1] + m[i] * dx).toFixed(1) + ' ' + (pts[i + 1][0] - dx).toFixed(1) + ',' + (pts[i + 1][1] - m[i + 1] * dx).toFixed(1) + ' ' + pts[i + 1][0].toFixed(1) + ',' + pts[i + 1][1].toFixed(1); }
+            return s;
+        }
+        function ramp(label) { return '<span class="ramp">0 % ' + [0, .25, .5, .75, 1].map(function (v) { return '<i style="background:var(--v-acc);opacity:' + op(v) + '"></i>'; }).join('') + ' 100 % ' + label + '</span>'; }
+
+        // ---------- Anfragen ----------
+        function ask(ident, value) {
+            if (typeof requestAction !== 'function') return;
+            root.classList.add('busy');
+            requestAction(ident, JSON.stringify(Object.assign({}, value, { cid: cid })));
+        }
+        function setView(v) { view = Object.assign({}, view, v); hideTip(); $('v2_csvlink').hidden = true; ask('View', view); }
+        function askDay(d) { dayOpen = true; tab = 'power'; ask('Day', { scope: view.scope, day: d }); if (data) render(); }
+        // Monat aus Jahresansicht öffnen
+        function openMonth(s) { var d = ts(s), n = new Date(); setView({ type: 'monat', off: (d.getFullYear() * 12 + d.getMonth()) - (n.getFullYear() * 12 + n.getMonth()) }); }
+        function bucketClick(it) { if (data.unit === 'Tag') { if (it.s != null) askDay(it.s); } else if (it.s != null) openMonth(it.s); }
+        function go(t) { tab = t; hideTip(); render(); try { root.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { } }
+
+        // ---------- Rahmen ----------
+        function renderHead(d) {
+            var sel = $('v2_scope'), html = '', grp = null;
+            d.scopeOptions.forEach(function (o) {
+                if (o.group !== grp) { if (grp) html += '</optgroup>'; if (o.group) html += '<optgroup label="' + esc(o.group) + '">'; grp = o.group; }
+                html += '<option value="' + esc(o.v) + '">' + esc(o.l) + '</option>';
+            });
+            sel.innerHTML = html + (grp ? '</optgroup>' : '');
+            sel.value = d.scope.value;
+            var c = d.scope.crumbs;
+            $('v2_title').textContent = c[c.length - 1].l;
+            $('v2_crumb').innerHTML = c.length > 1 ? c.map(function (x, i) { return i === c.length - 1 ? '<span>' + esc(x.l) + '</span>' : '<button type="button" data-scope="' + esc(x.v) + '">' + esc(x.l) + '</button><span>›</span>'; }).join('') : '';
+            $('v2_label').textContent = d.label;
+            $('v2_prev').disabled = !d.canPrev; $('v2_next').disabled = !d.canNext;
+            Array.prototype.forEach.call($('v2_per').children, function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-p') === d.type)); });
+            var lim = d.scope.limitKw ? ' · ' + d.scope.limitLabel + ' ' + NF1.format(d.scope.limitKw) + ' kW' : '';
+            $('v2_src').textContent = d.scope.points + ' Ladepunkte' + lim + ' · Energie ab ' + md(d.source.histStart) + ', Details ab ' + dmy(d.source.setup);
+            $('v2_note').hidden = !d.scope.note; $('v2_note').textContent = d.scope.note || '';
+            $('v2_csvverl').textContent = d.unit === 'Tag' ? 'Je Tag und Ladepunkt' : 'Je Monat und Ladepunkt';
+        }
+        function renderTabs(d) {
+            $('v2_tabs').innerHTML = TABS.map(function (t) {
+                var b = t[0] === 'power' && d.kpi.limitDays ? '<span class="b" title="Tage am ' + esc(limLabel(d)) + '">' + d.kpi.limitDays + '</span>' : '';
+                return '<button type="button" role="tab" data-t="' + t[0] + '" aria-selected="' + (tab === t[0]) + '">' + t[1] + b + '</button>';
+            }).join('');
+        }
+        function limLabel(d) { return d.scope.level === 'all' ? 'Budget' : d.scope.limitLabel; }
+        function render() {
+            var d = data; if (!d) return;
+            evTheme(); hideTip();
+            renderHead(d); renderTabs(d);
+            var b = $('v2_body'); b.innerHTML = '';
+            var g = document.createElement('div'); g.className = 'v2-grid'; b.appendChild(g);
+            ({ over: tOver, energy: tEnergy, occ: tOcc, power: tPower, ses: tSes, pts: tPts })[tab](g, d);
+        }
+        function card(g, cls, html) { var c = document.createElement('section'); c.className = 'v2-card ' + (cls || ''); c.innerHTML = html; g.appendChild(c); return c; }
+        function soon(g, html) { var c = document.createElement('div'); c.className = 'v2-soon'; c.innerHTML = html; g.appendChild(c); return c; }
+        function noDetail(d) { return 'erst ab ' + dmy(d.source.setup); }
+
+        // Gruppen der Energie (alle: Standorte, Standort: Säulen, Säule: Ladepunkte) in fester Reihenfolge
+        function groups(d) { var o = []; d.energy.forEach(function (e) { Object.keys(e.by).forEach(function (k) { if (o.indexOf(k) < 0) o.push(k); }); }); return o; }
+
+        // Balken je Zeitabschnitt (Tag oder Monat), optional gestapelt
+        function bucketBars(el, items, o) {
+            var Wd = W(el), H = o.h || 220, L = 46, R = o.budget ? 78 : 8, T = 14, B = 22, pw = Wd - L - R, ph = H - T - B, n = items.length, band = pw / n;
+            var top = 0; items.forEach(function (it, i) { top = Math.max(top, sum(o.stack(it, i).map(function (x) { return x[0]; })), o.line ? o.line(i) || 0 : 0); });
+            var max = o.max ? Math.max(o.max, top) : niceMax(Math.max(top, o.budget || 0) * 1.05);
+            if (o.max) max = Math.ceil(max / tickStep(o.max)) * tickStep(o.max);
+            var y = function (v) { return T + ph - v / max * ph; };
+            var s = '<svg viewBox="0 0 ' + Wd + ' ' + H + '" height="' + H + '">';
+            if (data.unit === 'Tag') items.forEach(function (it, i) { if (it.s != null && wdOf(it.s) >= 5) s += '<rect x="' + (L + i * band) + '" y="' + T + '" width="' + band + '" height="' + ph + '" style="fill:var(--v-lane)"/>'; });
+            s += yAxis(L, R, Wd, y, max, o.unit, o.fmt);
+            var bw = Math.max(2, Math.min(34, band * 0.68)), every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(pw / 28))));
+            items.forEach(function (it, i) {
+                var cx = L + band * i + band / 2, yy = y(0), segs = o.stack(it, i);
+                segs.forEach(function (sg, j) {
+                    if (!(sg[0] > 0)) return; var h = sg[0] / max * ph; yy -= h;
+                    s += '<rect x="' + (cx - bw / 2) + '" y="' + yy + '" width="' + bw + '" height="' + Math.max(0.5, h - (j < segs.length - 1 ? 1 : 0)) + '" rx="' + (j === segs.length - 1 ? 2.5 : 0) + '" style="fill:' + sg[1] + '"/>';
+                });
+                if (o.mark && o.mark(it)) s += '<text x="' + cx + '" y="' + (yy - 4) + '" text-anchor="middle" class="budt" style="font-size:9px">▲</text>';
+                if (o.sel != null && o.sel === it.s) s += '<rect x="' + (L + band * i + 1) + '" y="' + T + '" width="' + (band - 2) + '" height="' + ph + '" rx="3" style="fill:none;stroke:var(--v-text);stroke-width:1.5"/>';
+                if (i % every === 0) s += '<text x="' + cx + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(it.x) + '</text>';
+            });
+            if (o.line) { var lp = []; items.forEach(function (it, i) { var v = o.line(i); if (v != null) lp.push([L + band * i + band / 2, y(v)]); }); if (lp.length > 1) s += '<path d="' + smooth(lp) + '" style="fill:none;stroke:var(--v-text);stroke-opacity:.5;stroke-width:1.5;stroke-dasharray:4 3"/>'; }
+            if (o.budget) { var by = y(o.budget); s += '<line class="bud" x1="' + L + '" x2="' + (L + pw) + '" y1="' + by + '" y2="' + by + '"/><text class="budt" x="' + (L + pw + 6) + '" y="' + (by + 4) + '">' + esc(o.budgetLabel) + '</text><text x="' + (L + pw + 6) + '" y="' + (by + 17) + '">' + esc(o.budgetSub) + '</text>'; }
+            items.forEach(function (it, i) { s += '<rect class="hit' + (o.click && o.canClick(it) ? '' : ' nc') + '" data-i="' + i + '" x="' + (L + band * i) + '" y="' + T + '" width="' + band + '" height="' + (ph + B) + '"/>'; });
+            el.innerHTML = s + '</svg>';
+            hits(el, function (ds) { return o.tip(items[+ds.i], +ds.i); }, o.click ? function (ds) { var it = items[+ds.i]; if (o.canClick(it)) o.click(it); } : null);
+        }
+        function clickHint(it) { return it.future || it.nodata ? '' : '<div class="m">Klicken: ' + (data.unit === 'Tag' ? 'Lastverlauf dieses Tages' : 'diesen Monat öffnen') + '</div>'; }
+        function canOpen(it) { return !it.future && it.s != null && (data.unit !== 'Tag' || it.detail); }
+
+        // =====================================================================
+        // Übersicht
+        // =====================================================================
+        function tOver(g, d) {
+            var k = d.kpi, lim = limLabel(d), all = d.scope.level === 'all';
+            var chg = k.prevKwh > 0 ? (k.kwh - k.prevKwh) / k.prevKwh : null;
+            var kp = [
+                { l: 'Energie geladen', v: kwh(k.kwh), u: 'kWh', go: 'energy', t: 'Summe der Zählerstände aller Ladepunkte im Zeitraum',
+                    s: chg == null ? 'kein Vergleichszeitraum' : '<span class="' + (chg >= 0 ? 'up' : 'dn') + '">' + (chg >= 0 ? '▲ +' : '▼ ') + NF0.format(chg * 100) + ' %</span> ' + esc(k.cmpText) },
+                { l: 'Ladevorgänge', v: k.ses == null ? '–' : NF0.format(k.ses), u: '', go: 'ses', t: 'Ein Ladevorgang = vom Anstecken bis zum Abstecken',
+                    s: k.ses == null ? noDetail(d) : k.ses ? 'Ø <b>' + kwh(k.avgKwh) + ' kWh</b> · Ø Standzeit <b>' + durH(k.avgDur) + '</b>' : 'keine im Zeitraum' },
+                { l: 'Auslastung Mo–Fr ' + d.biz.from + '–' + d.biz.to + ' Uhr', v: k.bizOcc == null ? '–' : NF0.format(k.bizOcc * 100), u: k.bizOcc == null ? '' : '%', go: 'occ', t: 'Belegt = Fahrzeug angesteckt. Aktiv geladen = Status „Lädt“ und mindestens 0,1 kW.',
+                    bar: k.bizOcc == null ? null : [k.bizLoad || 0, Math.max(0, k.bizOcc - (k.bizLoad || 0))],
+                    s: k.bizOcc == null ? noDetail(d) : (k.bizLoad == null ? '' : 'davon lädt aktiv <b>' + pct(k.bizLoad) + '</b> · ') + 'rund um die Uhr ' + pct(k.occ) },
+                { l: 'Höchste Leistung', v: k.peak == null ? '–' : NF1.format(k.peak), u: k.peak == null ? '' : 'kW', go: 'power', t: all ? 'Höchste Leistung eines Standorts im Zeitraum' : 'Höchste Summe aller Ladepunkte im Zeitraum', day: k.peakAt,
+                    s: k.peak == null ? noDetail(d) : (k.peakAt ? WD[wdOf(k.peakAt)] + ' ' + dm(k.peakAt) + ' ' + hm(k.peakAt) + ' Uhr' : '') + (all && k.peakSite ? ' · ' + esc(k.peakSite) : '') + (!all && d.scope.limitKw ? ' · ' + pct(k.peak / d.scope.limitKw) + ' vom ' + esc(lim) : '') },
+                { l: 'Zeit am ' + lim, v: k.limitSec == null ? '–' : NF1.format(k.limitSec / 3600), u: k.limitSec == null ? '' : 'h', go: 'power', warn: k.limitDays > 0, t: 'Zeit, in der das Lastmanagement die Leistung begrenzt hat (ab 98,5 % des Limits)',
+                    s: k.peak == null ? noDetail(d) : !all && !d.scope.limitKw ? 'ohne ' + esc(lim) : k.limitDays ? 'an <b>' + k.limitDays + (all ? (k.limitDays === 1 ? ' Standort-Tag' : ' Standort-Tagen') : ' von ' + k.detailDays + ' Tagen') + '</b>' : 'nie erreicht' },
+                { l: 'Davon aktiv geladen', v: k.occ && k.load != null ? NF0.format(k.load / k.occ * 100) : '–', u: k.occ && k.load != null ? '%' : '', go: 'ses', t: 'Anteil der Standzeit, in der wirklich geladen wird. Der Rest: Auto steckt, lädt aber nicht (voll oder pausiert).',
+                    s: k.occ && k.load != null ? 'der Standzeit · <b>' + pct(1 - k.load / k.occ) + '</b> stehen Autos ohne zu laden' : noDetail(d) }
+            ];
+            kp.forEach(function (x) {
+                var c = card(g, 'c4 v2-kpi' + (x.warn ? ' warn' : ''), '<div class="l"><span>' + x.l + q(x.t) + '</span><span class="go">Details ›</span></div><div class="v">' + x.v + '<small>' + x.u + '</small></div>' +
+                    (x.bar ? '<div class="v2-bar2"><i style="width:' + (x.bar[0] * 100).toFixed(1) + '%;background:var(--v-acc)"></i><i class="v2-h" style="width:' + (x.bar[1] * 100).toFixed(1) + '%"></i></div>' : '') + '<div class="s">' + x.s + '</div>');
+                c.onclick = function () { if (x.day && x.go === 'power') askDay(x.day); else go(x.go); };
+            });
+            var ins = insights(d);
+            var c2 = card(g, 'c5', '<div class="v2-ch"><h4>Das fällt auf</h4><span class="m">automatisch aus den Daten</span></div>' + (ins.length ? '<div class="v2-ins">' + ins.map(function (x, j) {
+                return '<button type="button" data-j="' + j + '"><span class="ic' + (x.w ? ' w' : '') + '">' + x.i + '</span><span>' + x.t + '</span><span class="a">' + x.a + ' ›</span></button>';
+            }).join('') + '</div>' : '<div class="v2-empty">Noch zu wenig Daten im Zeitraum.</div>'));
+            c2.querySelectorAll('.v2-ins button').forEach(function (b) { b.onclick = function () { var x = ins[+b.dataset.j]; if (x.heat) st.heat = x.heat; go(x.go); }; });
+            var c3 = card(g, 'c7', '<div class="v2-ch"><h4>' + (d.unit === 'Tag' ? 'Energie je Tag' : 'Energie je Monat') + '</h4><span class="m">▲ = am ' + esc(lim) + ' · ' + (d.unit === 'Tag' ? 'Tag anklicken: Lastverlauf' : 'Monat anklicken: öffnen') + '</span></div><div></div>' +
+                '<div class="v2-lg"><span><i style="background:var(--v-acc)"></i>Energie</span><span><b class="budt" style="color:var(--v-lim-ink)">▲</b> am ' + esc(lim) + '</span>' + (d.unit === 'Tag' ? '<span><i style="background:var(--v-lane);box-shadow:inset 0 0 0 1px var(--v-base)"></i>Wochenende</span>' : '') + '</div>');
+            bucketBars(c3.children[1], d.energy, {
+                unit: 'kWh', stack: function (e) { return [[e.kwh, 'var(--v-acc)']]; }, mark: function (e, i) { var p = d.peaks[d.energy.indexOf(e)]; return p && p.limitDays > 0; },
+                tip: function (e, i) { var p = d.peaks[i] || {}; return '<b>' + esc(e.t) + '</b>' + (e.future ? '<div class="m">liegt in der Zukunft</div>' : e.nodata ? '<div class="m">keine Daten</div>' : '<div class="r"><span>Energie</span><span>' + kwh(e.kwh) + ' kWh</span></div>' + (e.detail ? '<div class="r"><span>Ladevorgänge</span><span>' + e.ses + '</span></div>' : '') + (p.kw != null && !all ? '<div class="r"><span>Spitze</span><span>' + NF1.format(p.kw) + ' kW</span></div>' : '') + (p.limitDays ? '<div class="w">▲ ' + (p.limitSec ? fmin(p.limitSec / 60) + ' ' : '') + 'am ' + esc(lim) + '</div>' : '')) + clickHint(e); },
+                click: bucketClick, canClick: canOpen
+            });
+        }
+        function insights(d) {
+            var k = d.kpi, o = [], lim = limLabel(d), all = d.scope.level === 'all';
+            if (k.limitDays) o.push({ w: 1, i: '▲', t: (all ? 'Ein Standort hat sein Budget an <b>' + k.limitDays + ' Standort-Tagen</b> erreicht' : 'Das ' + esc(lim) + ' war an <b>' + k.limitDays + ' von ' + k.detailDays + ' Tagen</b> erreicht') + (k.limitSec ? ', zusammen <b>' + fmin(k.limitSec / 60) + '</b>' : '') + '. Dann lädt jedes Auto langsamer.', a: 'Leistung', go: 'power' });
+            if (k.prevKwh > 0 && k.kwh > 0) { var c = (k.kwh - k.prevKwh) / k.prevKwh; if (Math.abs(c) >= 0.05) o.push({ i: c > 0 ? '↗' : '↘', t: 'Energie <b>' + (c > 0 ? '+' : '−') + NF0.format(Math.abs(c) * 100) + ' %</b> ' + esc(k.cmpText) + ': ' + kwh(k.kwh) + ' statt ' + kwh(k.prevKwh) + ' kWh.', a: 'Energie', go: 'energy' }); }
+            if (k.occ && k.load != null && k.occ > 0.02) { var idle = 1 - k.load / k.occ; if (idle > 0.3) o.push({ w: idle > 0.5 ? 1 : 0, i: 'ⓘ', t: 'Autos stecken, laden aber nicht: <b>' + pct(idle) + '</b> der Standzeit. Diese Plätze sind blockiert, obwohl kein Strom fließt.', a: 'Belegung', go: 'occ', heat: 'l' }); }
+            var g = d.heat.grid, bw = -1, bh = -1, bv = -1;
+            if (d.heat.days) for (var w = 0; w < 7; w++) for (var h = 0; h < 24; h++) if (g[w][h] != null && g[w][h] > bv) { bv = g[w][h]; bw = w; bh = h; }
+            if (bv > 0.05) o.push({ w: bv > 0.85 ? 1 : 0, i: '◷', t: 'Am vollsten ist es <b>' + WDL[bw] + 's ' + bh + '–' + (bh + 1) + ' Uhr</b>: dann ist im Schnitt <b>' + pct(bv) + '</b> belegt.', a: 'Belegung', go: 'occ' });
+            var rows = d.rows.filter(function (r) { return r.occ != null; });
+            if (rows.length > 1) { rows.sort(function (a, b) { return b.occ - a.occ; }); var hi = rows[0], lo = rows[rows.length - 1]; if (hi.occ - lo.occ > 0.08) o.push({ i: '⇅', t: '<b>' + esc(hi.label) + '</b> ist am stärksten belegt (' + pct(hi.occ) + '), <b>' + esc(lo.label) + '</b> am wenigsten (' + pct(lo.occ) + ').', a: all ? 'Standorte' : 'Ladepunkte', go: 'pts' }); }
+            if (d.unit === 'Tag') {
+                var we = [0, 0, 0, 0, 0, 0, 0], wn = [0, 0, 0, 0, 0, 0, 0];
+                d.energy.forEach(function (e) { if (!e.future && !e.nodata && e.s != null) { we[wdOf(e.s)] += e.kwh; wn[wdOf(e.s)]++; } });
+                var av = we.map(function (x, j) { return wn[j] ? x / wn[j] : 0; }), best = av.indexOf(Math.max.apply(null, av));
+                if (av[best] > 0 && d.type === 'monat') o.push({ i: '◔', t: 'Stärkster Wochentag ist der <b>' + WDL[best] + '</b> mit Ø <b>' + kwh(av[best]) + ' kWh</b>.', a: 'Energie', go: 'energy' });
+            }
+            return o.slice(0, 5);
+        }
+
+        // =====================================================================
+        // Energie
+        // =====================================================================
+        function tEnergy(g, d) {
+            var gr = groups(d), on = function (k) { return !st.enOff[k]; }, multi = gr.length > 1, all = d.scope.level === 'all';
+            var gName = all ? 'Standort' : d.scope.level === 'site' ? 'Säule' : 'Ladepunkt';
+            var tot = function (e) { return multi ? sum(gr.filter(on).map(function (k) { return e.by[k] || 0; })) : e.kwh; };
+            var c1 = card(g, '', '<div class="v2-ch"><h4>' + (d.unit === 'Tag' ? 'Energie je Tag' : 'Energie je Monat') + (multi ? ' nach ' + gName : '') + '</h4><span class="m">' + (d.unit === 'Tag' && d.type === 'monat' ? 'gestrichelt: Ø der letzten 7 Tage · ' : '') + (d.unit === 'Tag' ? 'Tag anklicken: Lastverlauf' : 'Monat anklicken: öffnen') + '</span></div><div></div><div class="v2-chips"></div>');
+            var idx = d.energy.map(function (e, i) { return i; });
+            bucketBars(c1.children[1], d.energy, {
+                h: 250, unit: 'kWh',
+                stack: function (e) { return multi ? gr.map(function (k, j) { return on(k) ? [e.by[k] || 0, ser(j)] : [0, '']; }) : [[e.kwh, 'var(--v-acc)']]; },
+                line: d.unit === 'Tag' && d.type === 'monat' ? function (i) { var a = []; for (var j = Math.max(0, i - 6); j <= i; j++) if (!d.energy[j].future) a.push(tot(d.energy[j])); return d.energy[i].future || !a.length ? null : sum(a) / a.length; } : null,
+                tip: function (e) {
+                    var h = '<b>' + esc(e.t) + (e.nodata ? '' : ' · ' + kwh(tot(e)) + ' kWh') + '</b>';
+                    if (e.future) return h + '<div class="m">liegt in der Zukunft</div>';
+                    if (multi) gr.map(function (k, j) { return [k, j, e.by[k] || 0]; }).filter(function (x) { return on(x[0]) && x[2] > 0.05; }).sort(function (a, b) { return b[2] - a[2]; })
+                        .forEach(function (x) { h += '<div class="r"><span><i style="background:' + ser(x[1]) + '"></i>' + esc(x[0]) + '</span><span>' + kwh(x[2]) + ' kWh</span></div>'; });
+                    return h + clickHint(e);
+                },
+                click: bucketClick, canClick: canOpen
+            });
+            if (multi) {
+                var ch = c1.children[2];
+                ch.innerHTML = gr.map(function (k, j) { return '<button type="button" class="v2-chip' + (on(k) ? '' : ' off') + '" data-k="' + esc(k) + '"><i style="background:' + ser(j) + '"></i>' + esc(k) + '</button>'; }).join('') + '<span style="font-size:12px;color:var(--v-muted);align-self:center">anklicken zum Aus- und Einblenden</span>';
+                ch.querySelectorAll('.v2-chip').forEach(function (b) { b.onclick = function () { var k = b.getAttribute('data-k'); st.enOff[k] = !st.enOff[k]; render(); }; });
+            }
+            // Anteil je Zeile der Tabelle
+            var rows = d.rows.slice().sort(function (a, b) { return b.kwh - a.kwh; }), T = sum(rows.map(function (r) { return r.kwh; })) || 1, mx = rows.length ? rows[0].kwh || 1 : 1;
+            var c2 = card(g, 'c5', '<div class="v2-ch"><h4>Anteil je ' + (all ? 'Standort' : 'Ladepunkt') + '</h4><span class="m">' + kwh(T) + ' kWh gesamt</span></div><div class="v2-tbl"><table style="min-width:0"><tbody>' + rows.map(function (r) {
+                return '<tr' + (r.drill ? ' data-drill="' + esc(r.drill) + '"' : '') + '><td>' + esc(r.label) + '</td><td>' + kwh(r.kwh) + ' kWh<span class="v2-tbar"><i style="width:' + (r.kwh / mx * 100).toFixed(1) + '%;background:var(--v-acc)"></i></span></td><td>' + pct(r.kwh / T) + '</td></tr>';
+            }).join('') + '</tbody></table></div>');
+            // Wochentage
+            var c3 = card(g, 'c7', '<div class="v2-ch"><h4>Energie je Wochentag</h4><span class="m">Ø je Tag im Zeitraum</span></div><div></div>');
+            if (d.unit !== 'Tag') { c3.children[1].innerHTML = '<div class="v2-empty">Nur in der Wochen- und Monatsansicht.</div>'; }
+            else {
+                var we = [0, 0, 0, 0, 0, 0, 0], wn = [0, 0, 0, 0, 0, 0, 0];
+                d.energy.forEach(function (e) { if (!e.future && !e.nodata && e.s != null) { we[wdOf(e.s)] += e.kwh; wn[wdOf(e.s)]++; } });
+                var items = WD.map(function (x, j) { return { x: x, t: WDL[j], v: wn[j] ? we[j] / wn[j] : 0, n: wn[j] }; });
+                bucketBarsSimple(c3.children[1], items, 'kWh', function (it) { return '<b>' + it.t + '</b>Ø ' + kwh(it.v) + ' kWh je Tag<div class="m">' + it.n + ' Tage im Zeitraum</div>'; });
+            }
+            soon(g, '<b>Mit dem nächsten Update:</b> Energie je Uhrzeit (wann am Tag geladen wird).');
+        }
+        function bucketBarsSimple(el, items, unit, tipFn) {
+            var Wd = W(el, 200), H = 180, L = 40, R = 6, T = 10, B = 20, pw = Wd - L - R, ph = H - T - B, n = items.length, band = pw / n;
+            var max = niceMax(Math.max.apply(null, items.map(function (i) { return i.v; })) * 1.05), y = function (v) { return T + ph - v / max * ph; };
+            var s = '<svg viewBox="0 0 ' + Wd + ' ' + H + '" height="' + H + '">' + yAxis(L, R, Wd, y, max, unit);
+            items.forEach(function (it, i) {
+                var bw = Math.min(40, band * 0.66), cx = L + band * i + band / 2;
+                if (it.v > 0) s += '<rect x="' + (cx - bw / 2) + '" y="' + y(it.v) + '" width="' + bw + '" height="' + Math.max(0.5, y(0) - y(it.v)) + '" rx="2.5" style="fill:var(--v-acc)"/>';
+                s += '<text x="' + cx + '" y="' + (H - 5) + '" text-anchor="middle">' + esc(it.x) + '</text><rect class="hit nc" data-i="' + i + '" x="' + (L + band * i) + '" y="' + T + '" width="' + band + '" height="' + (ph + B) + '"/>';
+            });
+            el.innerHTML = s + '</svg>';
+            hits(el, function (ds) { return tipFn(items[+ds.i]); });
+        }
+
+        // =====================================================================
+        // Belegung
+        // =====================================================================
+        function tOcc(g, d) {
+            var gl = d.heat.gridL, mode = gl ? st.heat : 'b', G = mode === 'l' ? gl : d.heat.grid;
+            var c1 = card(g, '', '<div class="v2-ch"><h4>' + (mode === 'l' ? 'Aktives Laden' : 'Belegung') + ' nach Wochentag und Uhrzeit</h4><div class="v2-ctl"><div class="v2-seg" id="v2_hm">' +
+                '<button type="button" data-h="b" aria-pressed="' + (mode === 'b') + '">Belegt</button><button type="button" data-h="l" aria-pressed="' + (mode === 'l') + '"' + (gl ? '' : ' disabled') + '>Lädt aktiv</button></div>' +
+                '<div class="v2-seg"><button type="button" aria-pressed="true">Wochentag & Uhrzeit</button><button type="button" disabled title="Kommt mit dem nächsten Update">Kalender</button><button type="button" disabled title="Kommt mit dem nächsten Update">Gleichzeitigkeit</button></div></div></div>' +
+                '<p class="v2-expl">Durchschnitt je Wochentag und Stunde über ' + (d.heat.days || 0) + ' Tage. Wochentag anklicken: darunter der Tagesverlauf mit Belegt und Lädt aktiv.</p><div></div><div class="v2-lg">' + ramp(mode === 'l' ? 'lädt aktiv' : 'belegt') + '</div><div></div>');
+            c1.querySelectorAll('#v2_hm button').forEach(function (b) { b.onclick = function () { st.heat = b.getAttribute('data-h'); render(); }; });
+            if (!d.heat.days) { c1.children[2].innerHTML = '<div class="v2-empty">Belegung gibt es erst ab ' + dmy(d.source.setup) + '.</div>'; }
+            else {
+                heat(c1.children[2], G.map(function (r, w) { return { label: WD[w], vals: r }; }), { selRow: st.heatWd }, function (ds) {
+                    var w = +ds.r, h = +ds.h, b = d.heat.grid[w][h], l = gl ? gl[w][h] : null;
+                    return '<b>' + WDL[w] + ', ' + h + '–' + (h + 1) + ' Uhr</b>' + (b == null ? 'keine Daten' : '<div class="r"><span>belegt</span><span>' + pct(b) + '</span></div>' + (l == null ? '' : '<div class="r"><span>davon lädt aktiv</span><span>' + pct(l) + '</span></div>')) + '<div class="m">Klicken: Tagesverlauf</div>';
+                }, function (ds) { st.heatWd = st.heatWd === +ds.r ? null : +ds.r; render(); });
+                if (st.heatWd != null) dayProfile(c1.children[4], d, st.heatWd);
+            }
+            // je Ladepunkt
+            var rows = d.rows.filter(function (r) { return r.occ != null; }).sort(function (a, b) { return b.occ - a.occ; }), all = d.scope.level === 'all';
+            card(g, '', '<div class="v2-ch"><h4>Auslastung je ' + (all ? 'Standort' : 'Ladepunkt') + '</h4><span class="m">rund um die Uhr im Zeitraum · Zeile anklicken: ' + (all ? 'Standort öffnen' : 'Säule öffnen') + '</span></div>' +
+                (rows.length ? '<div class="v2-tbl"><table style="min-width:0"><tbody>' + rows.map(function (r) {
+                    var l = r.load == null ? 0 : r.load;
+                    return '<tr' + (r.drill ? ' data-drill="' + esc(r.drill) + '"' : '') + '><td>' + esc(r.label) + '</td><td style="width:55%"><span class="v2-bar2" style="margin:0;height:10px"><i style="width:' + (l * 100).toFixed(1) + '%;background:var(--v-acc)"></i><i class="v2-h" style="width:' + (Math.max(0, r.occ - l) * 100).toFixed(1) + '%"></i></span></td><td>' + pct(r.occ) + '</td><td style="color:var(--v-muted)">' + (r.load == null ? '' : 'lädt ' + pct(r.load)) + '</td></tr>';
+                }).join('') + '</tbody></table></div><div class="v2-lg"><span><i style="background:var(--v-acc)"></i>lädt aktiv</span><span><i class="hh"></i>angesteckt, lädt nicht</span><span><i style="background:var(--v-lane);box-shadow:inset 0 0 0 1px var(--v-base)"></i>frei</span></div>' : '<div class="v2-empty">' + noDetail(d) + '</div>'));
+            soon(g, '<b>Mit dem nächsten Update:</b> Kalender (jeder Tag einzeln), Gleichzeitigkeit (wie oft alle Ladepunkte belegt sind) und Tagesverlauf in 5-Minuten-Schritten.');
+        }
+        function heat(el, rows, o, tipFn, click) {
+            var Wd = W(el), L = o.L || 30, ch = 18, gap = 2, cw = (Wd - L) / 24, H = rows.length * (ch + gap) + 18;
+            var s = '<svg viewBox="0 0 ' + Wd + ' ' + H + '" height="' + H + '">';
+            rows.forEach(function (rw, ri) {
+                var y = ri * (ch + gap), sel = o.selRow === ri;
+                if (sel) s += '<rect x="0" y="' + (y - 1) + '" width="' + Wd + '" height="' + (ch + 2) + '" rx="4" style="fill:var(--v-acc-wash)"/>';
+                s += '<text x="2" y="' + (y + 13) + '" style="fill:var(--v-text);' + (sel ? 'font-weight:700' : '') + '">' + esc(rw.label) + '</text>';
+                for (var h = 0; h < 24; h++) {
+                    var x = L + h * cw, v = rw.vals[h];
+                    s += v == null ? '<rect x="' + x + '" y="' + y + '" width="' + (cw - gap) + '" height="' + ch + '" rx="2" style="fill:none;stroke:var(--v-line)"/>' : '<rect x="' + x + '" y="' + y + '" width="' + (cw - gap) + '" height="' + ch + '" rx="2" style="fill:var(--v-acc)" fill-opacity="' + op(v) + '"/>';
+                    s += '<rect class="hit" data-r="' + ri + '" data-h="' + h + '" x="' + x + '" y="' + y + '" width="' + cw + '" height="' + (ch + gap) + '"/>';
+                }
+            });
+            for (var hh = 0; hh <= 24; hh += 3) s += '<text x="' + (L + hh * cw) + '" y="' + (H - 3) + '" text-anchor="' + (hh === 24 ? 'end' : hh ? 'middle' : 'start') + '">' + hh + '</text>';
+            el.innerHTML = s + '</svg>';
+            hits(el, tipFn, click);
+        }
+        // Tagesverlauf eines Wochentags aus der Heatmap (stündlich): belegt als Fläche, davon lädt aktiv
+        function dayProfile(el, d, w) {
+            var b = d.heat.grid[w], l = d.heat.gridL ? d.heat.gridL[w] : null;
+            el.innerHTML = '<div class="v2-ch" style="margin-top:14px"><h4>' + WDL[w] + ' im Tagesverlauf</h4><span class="m">Ø Anteil der Ladepunkte je Stunde · <button type="button" class="v2-btn" style="padding:1px 8px" id="v2_hwx">schließen</button></span></div><div></div>' +
+                '<div class="v2-lg"><span><i style="background:var(--v-acc)"></i>lädt aktiv</span><span><i class="hh"></i>angesteckt, lädt nicht</span></div>';
+            el.querySelector('#v2_hwx').onclick = function () { st.heatWd = null; render(); };
+            var box = el.children[1], Wd = W(box), H = 190, L = 40, R = 6, T = 8, B = 20, pw = Wd - L - R, ph = H - T - B, bw = pw / 24;
+            var y = function (v) { return T + ph - v * ph; };
+            var s = '<svg viewBox="0 0 ' + Wd + ' ' + H + '" height="' + H + '"><defs>' + hatch('v2_dph') + '</defs>';
+            [0, .25, .5, .75, 1].forEach(function (v) { s += '<line class="' + (v ? 'gl' : 'bl') + '" x1="' + L + '" x2="' + (L + pw) + '" y1="' + y(v) + '" y2="' + y(v) + '"/><text x="' + (L - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + NF0.format(v * 100) + (v === 1 ? ' %' : '') + '</text>'; });
+            for (var h = 0; h < 24; h++) {
+                var x = L + h * bw + 1, w = bw - 2, bv = b[h] || 0, lv = l ? (l[h] || 0) : 0;
+                if (bv > 0) s += '<rect x="' + x + '" y="' + y(bv) + '" width="' + w + '" height="' + (y(lv) - y(bv)) + '" fill="url(#v2_dph)"/>';
+                if (lv > 0) s += '<rect x="' + x + '" y="' + y(lv) + '" width="' + w + '" height="' + (y(0) - y(lv)) + '" style="fill:var(--v-acc)"/>';
+                if (h % 3 === 0) s += '<text x="' + x + '" y="' + (H - 5) + '">' + h + '</text>';
+                s += '<rect class="hit nc" data-h="' + h + '" x="' + (L + h * bw) + '" y="' + T + '" width="' + bw + '" height="' + ph + '"/>';
+            }
+            box.innerHTML = s + '</svg>';
+            hits(box, function (ds) { var h2 = +ds.h; return '<b>' + WDL[w] + ', ' + h2 + '–' + (h2 + 1) + ' Uhr</b><div class="r"><span>belegt</span><span>' + pct(b[h2]) + '</span></div>' + (l ? '<div class="r"><span>lädt aktiv</span><span>' + pct(l[h2]) + '</span></div><div class="r"><span>steckt ohne Laden</span><span>' + pct(Math.max(0, (b[h2] || 0) - (l[h2] || 0))) + '</span></div>' : ''); });
+        }
+
+        // =====================================================================
+        // Leistung & Budget
+        // =====================================================================
+        function tPower(g, d) {
+            var k = d.kpi, all = d.scope.level === 'all', lim = limLabel(d), lk = d.scope.limitKw;
+            var c1 = card(g, 'c8', '<div class="v2-ch"><h4>' + (all ? 'Höchste Auslastung des Budgets' : 'Höchste Leistung') + ' je ' + (d.unit === 'Tag' ? 'Tag' : 'Monat') + '</h4><span class="m">' + (d.unit === 'Tag' ? 'Tag anklicken: Lastverlauf mit Status je Ladepunkt' : 'Monat anklicken: öffnen') + '</span></div><div></div>' +
+                '<div class="v2-lg"><span><i style="background:var(--v-acc)"></i>' + (all ? 'am stärksten belasteter Standort' : 'Höchstwert') + '</span><span><i style="background:var(--v-lim)"></i>am ' + esc(lim) + ', Lastmanagement drosselt</span></div>');
+            if (!k.detailDays) c1.children[1].innerHTML = '<div class="v2-empty">Leistungsspitzen gibt es erst ab ' + dmy(d.source.setup) + '.</div>';
+            else bucketBars(c1.children[1], d.peaks, {
+                h: 230, unit: all ? '%' : 'kW', max: all ? 1.2 : null, fmt: all ? function (v) { return NF0.format(v * 100); } : null,
+                stack: function (p) { var v = all ? p.pct : p.kw; return [[v, p.limitDays ? 'var(--v-lim)' : 'var(--v-acc)']]; },
+                budget: all ? 1 : lk, budgetLabel: all ? 'Budget' : lim, budgetSub: all ? '100 %' : (lk ? NF1.format(lk) + ' kW' : ''),
+                sel: dayOpen && day ? day.day : null,
+                tip: function (p) {
+                    if (!p.days) return '<b>' + esc(p.t) + '</b><div class="m">keine Daten</div>';
+                    return '<b>' + esc(p.t) + '</b>' + (all ? '<div class="r"><span>' + esc(p.site || '') + '</span><span>' + pct(p.pct) + ' vom Budget</span></div>' : '<div class="r"><span>Spitze</span><span>' + NF1.format(p.kw) + ' kW</span></div>') +
+                        (p.at ? '<div class="r"><span>um</span><span>' + (d.unit === 'Tag' ? hm(p.at) : dm(p.at) + ' ' + hm(p.at)) + ' Uhr</span></div>' : '') +
+                        (p.limitDays ? '<div class="w">▲ ' + (p.limitSec ? fmin(p.limitSec / 60) + ' ' : '') + 'am ' + esc(lim) + (d.unit !== 'Tag' || all ? ' (' + p.limitDays + (all ? ' Standort-Tage' : ' Tage') + ')' : '') + '</div>' : '<div class="m">nie am ' + esc(lim) + '</div>') +
+                        '<div class="m">Klicken: ' + (d.unit === 'Tag' ? 'Lastverlauf' : 'Monat öffnen') + '</div>';
+                },
+                click: function (p) { if (d.unit === 'Tag') askDay(p.day || p.s); else openMonth(p.s); }, canClick: function (p) { return p.days > 0; }
+            });
+            var ld = d.peaks.filter(function (p) { return p.limitDays; });
+            var side = card(g, 'c4', '<div class="v2-ch"><h4>' + esc(lim) + ' im Zeitraum</h4></div>' + (k.peak == null ? '<div class="v2-empty">' + noDetail(d) + '</div>' :
+                '<div class="v2-kpi static" style="border:0;padding:0"><div class="v">' + (k.limitSec == null ? '–' : NF1.format(k.limitSec / 3600)) + '<small>h am ' + esc(lim) + '</small></div><div class="s">' + (k.limitDays ? 'an <b>' + k.limitDays + (all ? (k.limitDays === 1 ? ' Standort-Tag' : ' Standort-Tagen') : ' von ' + k.detailDays + ' Tagen') + '</b>' : 'nie erreicht') + '</div></div>' +
+                (all ? '' : '<div class="v2-bar2" style="margin-top:10px"><i style="width:' + (k.detailDays ? k.limitDays / k.detailDays * 100 : 0).toFixed(1) + '%;background:var(--v-lim)"></i></div>') +
+                '<div class="v2-kv"><div><span>Höchste Leistung</span><b>' + NF1.format(k.peak) + ' kW' + (!all && lk ? ' (' + pct(k.peak / lk) + ')' : '') + '</b></div>' +
+                (k.peakAt ? '<div><span>am</span><b>' + dm(k.peakAt) + ' ' + hm(k.peakAt) + ' Uhr</b></div>' : '') + (all && k.peakSite ? '<div><span>Standort</span><b>' + esc(k.peakSite) + '</b></div>' : '') +
+                (ld.length && k.limitSec ? '<div><span>Ø je betroffenem ' + (d.unit === 'Tag' ? 'Tag' : 'Monat') + '</span><b>' + fmin(k.limitSec / 60 / ld.length) + '</b></div>' : '') + '</div>' +
+                '<p class="v2-expl" style="margin:12px 0 0">Am ' + esc(lim) + ' teilt das Lastmanagement die Leistung auf. Die Autos laden dann langsamer, aber alle laden.</p>'));
+            if (all && d.sitePeaks) {
+                var c3 = card(g, '', '<div class="v2-ch"><h4>Standorte</h4><span class="m">höchste Leistung gegen das eigene Budget · anklicken: Standort öffnen</span></div><div class="v2-tbl"><table style="min-width:0"><tbody>' + d.sitePeaks.map(function (sp) {
+                    var r = sp.budget && sp.peak != null ? sp.peak / sp.budget : null;
+                    return '<tr data-drill="site:' + esc(sp.key) + '"><td>' + esc(sp.name) + '</td><td style="width:45%"><span class="v2-bar2" style="margin:0;height:10px"><i style="width:' + Math.min(100, (r || 0) * 100).toFixed(1) + '%;background:' + (sp.limitDays ? 'var(--v-lim)' : 'var(--v-acc)') + '"></i></span></td><td>' + (sp.peak == null ? '–' : NF1.format(sp.peak) + ' / ' + (sp.budget ? NF1.format(sp.budget) : '–') + ' kW') + '</td><td style="color:var(--v-muted)">' + (sp.limitDays ? '▲ ' + sp.limitDays + (sp.limitDays === 1 ? ' Tag' : ' Tage') + (sp.limitSec ? ', ' + fmin(sp.limitSec / 60) : '') : 'nie am Budget') + '</td></tr>';
+                }).join('') + '</tbody></table></div>');
+            }
+            if (dayOpen) dayCard(g);
+            soon(g, '<b>Mit dem nächsten Update:</b> Lastdauerlinie (wie lange welche Leistung anlag) und zu welcher Uhrzeit das ' + esc(lim) + ' erreicht wird.');
+        }
+        function dayCard(g) {
+            var c = day;
+            var el = card(g, '', '<div class="v2-ch" id="v2_daycard"><h4>Lastverlauf' + (c ? ' · ' + esc(c.label) : '') + '</h4><div class="v2-ctl"><div class="v2-step"><button type="button" id="v2_dp">‹</button><span>' + (c ? dayName(c.day) : '…') + '</span><button type="button" id="v2_dn">›</button></div><button type="button" class="v2-x" id="v2_dx" title="Schließen">×</button></div></div><div class="v2-expl" id="v2_dmeta"></div><div></div>' +
+                '<div class="v2-lg"><span>Zeile:</span><span><i style="background:var(--v-acc);opacity:.3"></i>' + (c && c.level === 'all' ? 'mind. eine Wallbox lädt' : 'lädt') + '</span><span><i class="hh"></i>' + (c && c.level === 'all' ? 'nur angesteckt' : 'angesteckt, lädt nicht') + '</span><span><i style="background:var(--v-lane);box-shadow:inset 0 0 0 1px var(--v-base)"></i>frei</span></div>');
+            $('v2_dp').disabled = !c || c.prev == null; $('v2_dn').disabled = !c || c.next == null;
+            $('v2_dp').onclick = function () { if (c && c.prev != null) askDay(c.prev); };
+            $('v2_dn').onclick = function () { if (c && c.next != null) askDay(c.next); };
+            $('v2_dx').onclick = function () { dayOpen = false; day = null; render(); };
+            if (!c) { el.children[2].innerHTML = '<div class="v2-empty">Wird geladen …</div>'; return; }
+            if (!c.upto) { el.children[2].innerHTML = '<div class="v2-empty">Für diesen Tag gibt es noch keine Daten.</div>'; return; }
+            var lbl = c.limitLabel, all = c.level === 'all';
+            $('v2_dmeta').innerHTML = c.peak ? 'Spitze <b>' + NF1.format(c.peak.kw) + ' kW</b> um <b>' + hm(c.day + c.peak.m * 60) + '</b> · ' + (all ? (function () { var n = c.lanes.filter(function (l) { return l.limitMin; }).length; return n ? '<span class="v2-pill">▲ ' + n + ' von ' + c.lanes.length + ' Standorten am Budget</span>' : 'kein Standort am Budget'; })() : c.limitKw ? (c.limitMin ? '<span class="v2-pill">▲ ' + fmin(c.limitMin) + ' am ' + esc(lbl) + '</span>' : 'nie am ' + esc(lbl)) : 'ohne ' + esc(lbl)) + ' · ' + kwh(sum(c.lanes.map(function (l) { return l.kwh; }))) + ' kWh' : 'kein Ladevorgang';
+            curve(el.children[2], c);
+            try { el.scrollIntoView({ block: 'nearest' }); } catch (e) { }
+        }
+        function expand(list, n) { var a = new Array(n), k = 0, v = 0; for (var i = 0; i < n; i++) { while (k < list.length && list[k][0] <= i) { v = list[k][1]; k++; } a[i] = v; } return a; }
+        function stAt(list, m) { for (var i = 0; list && i < list.length; i++) if (m >= list[i][0] && m < list[i][1]) return list[i][2]; return 0; }
+        function occAt(list, m) { var o = [0, 0]; for (var i = 0; list && i < list.length && list[i][0] <= m; i++) o = [list[i][1], list[i][2]]; return o; }
+        function curve(el, c) {
+            var all = c.level === 'all', n = c.upto, lim = c.limitKw, lbl = c.limitLabel;
+            var tot = expand(c.total, n), lanes = c.lanes.map(function (l) { return { l: l, v: expand(l.pts, n) }; });
+            var Wd = W(el), narrow = Wd < 560, L = narrow ? 92 : 150, R = narrow ? 56 : 118, T = 26, topH = 130, laneH = 26, gap = 6;
+            var y0 = T + topH + 24, yEnd = y0 + lanes.length * (laneH + gap) - gap, H = yEnd + 22, pw = Wd - L - R;
+            var x = function (m) { return L + m / c.len * pw; };
+            var tmax = niceMax(Math.max(0.1, Math.max.apply(null, tot), lim ? lim * 1.12 : 0)), yT = function (v) { return T + topH - v / tmax * topH; };
+            var s = '<svg viewBox="0 0 ' + Wd + ' ' + H + '" height="' + H + '"><defs><linearGradient id="v2_cg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--v-acc)" stop-opacity=".32"/><stop offset="1" stop-color="var(--v-acc)" stop-opacity=".03"/></linearGradient>' +
+                '<clipPath id="v2_cc">' + c.segs.map(function (g2) { return '<rect x="' + x(g2[0]) + '" y="0" width="' + Math.max(1, x(g2[1]) - x(g2[0])) + '" height="' + H + '"/>'; }).join('') + '</clipPath>' +
+                lanes.map(function (k, i) { return hatch('v2_ph' + i, ser(k.l.slot)); }).join('') + '</defs>';
+            s += yAxis(L, R, Wd, yT, tmax, 'kW');
+            if (c.peak) {
+                var tp = []; for (var m = 0; m < n; m += 2) tp.push([x(Math.min(n, m + 1)), yT((tot[m] + (tot[m + 1] == null ? tot[m] : tot[m + 1])) / 2)]);
+                var area = smooth(tp) + 'L' + tp[tp.length - 1][0].toFixed(1) + ',' + yT(0) + 'L' + tp[0][0].toFixed(1) + ',' + yT(0) + 'Z';
+                s += '<path d="' + area + '" fill="url(#v2_cg)"/>' + (c.segs.length ? '<path d="' + area + '" clip-path="url(#v2_cc)" style="fill:var(--v-lim)" fill-opacity=".45"/>' : '') + '<path d="' + smooth(tp) + '" style="fill:none;stroke:var(--v-acc);stroke-width:2"/>';
+            }
+            if (lim) s += '<line class="bud" x1="' + L + '" x2="' + (L + pw) + '" y1="' + yT(lim) + '" y2="' + yT(lim) + '"/><text class="budt" x="' + (L + pw + 6) + '" y="' + (yT(lim) + 4) + '">' + esc(lbl) + '</text>' + (narrow ? '' : '<text x="' + (L + pw + 6) + '" y="' + (yT(lim) + 17) + '">' + NF1.format(lim) + ' kW</text>');
+            var lastR = -1;
+            c.segs.forEach(function (g2) { var a = x(g2[0]), b = x(g2[1]), t = '▲ ' + fmin(g2[1] - g2[0]), w = t.length * 6.2 + 14, mid = (a + b) / 2; if (mid - w / 2 < lastR + 6 || mid + w / 2 > Wd) return; s += '<rect x="' + (mid - w / 2) + '" y="' + (T - 22) + '" width="' + w + '" height="17" rx="8.5" style="fill:var(--v-lim-wash)"/><text class="budt" x="' + mid + '" y="' + (T - 10) + '" text-anchor="middle">' + t + '</text>'; lastR = mid + w / 2; });
+            var shared = 1; lanes.forEach(function (k) { shared = Math.max(shared, k.l.peak); });
+            s += '<text x="0" y="' + (y0 - 8) + '">' + (all ? 'Standorte (je gegen eigenes Budget)' : 'Ladepunkte (gleiche Skala)') + '</text><text x="' + (L + pw + 8) + '" y="' + (y0 - 8) + '">' + (narrow ? 'Spitze' : 'zur Spitze · Tag') + '</text>';
+            lanes.forEach(function (k, i) {
+                var l = k.l, ly = y0 + i * (laneH + gap), col = ser(l.slot), base = ly + laneH;
+                var lmax = all ? Math.max(0.1, l.peak, (l.limitKw || 0) * 1.15) : shared * 1.05, yl = function (v) { return base - v / lmax * (laneH - 3); };
+                s += '<rect x="' + L + '" y="' + ly + '" width="' + pw + '" height="' + laneH + '" rx="6" style="fill:var(--v-lane)"/>';
+                (l.st || []).forEach(function (r) { var a = x(r[0]), w = Math.max(1, x(Math.min(r[1], n)) - a); s += r[2] === 2 ? '<rect x="' + a + '" y="' + ly + '" width="' + w + '" height="' + laneH + '" style="fill:' + col + '" fill-opacity=".15"/>' : '<rect x="' + a + '" y="' + ly + '" width="' + w + '" height="' + laneH + '" fill="url(#v2_ph' + i + ')"/>'; });
+                if (all) { (l.segs || []).forEach(function (g2) { s += '<rect x="' + x(g2[0]) + '" y="' + ly + '" width="' + Math.max(1, x(g2[1]) - x(g2[0])) + '" height="' + laneH + '" style="fill:var(--v-lim)" fill-opacity=".16"/>'; }); if (l.limitKw) s += '<line class="bud" style="stroke-width:1" x1="' + L + '" x2="' + (L + pw) + '" y1="' + yl(l.limitKw) + '" y2="' + yl(l.limitKw) + '"/>'; }
+                if (l.peak > 0.05) { var lp = []; for (var m2 = 0; m2 < n; m2 += 5) { var a5 = 0, c5 = 0; for (var j = m2; j < Math.min(n, m2 + 5); j++) { a5 += k.v[j]; c5++; } lp.push([x(Math.min(n, m2 + 2.5)), yl(a5 / c5)]); } s += '<path d="' + smooth(lp) + '" style="fill:none;stroke:' + col + ';stroke-width:1.6"/>'; }
+                else if (!(l.st || []).length) s += '<text x="' + (L + 8) + '" y="' + (ly + laneH / 2 + 4) + '">kein Ladevorgang</text>';
+                var nm = l.name, mx = Math.max(3, Math.floor((L - 24) / 6.4)); if (nm.length > mx) nm = nm.slice(0, mx - 1) + '…';
+                s += '<rect x="0" y="' + (ly + laneH / 2 - 5) + '" width="10" height="10" rx="3" style="fill:' + col + '"/><text x="16" y="' + (ly + laneH / 2 + 4) + '" style="fill:var(--v-text)">' + esc(nm) + '</text>';
+                s += '<text x="' + (L + pw + 8) + '" y="' + (ly + laneH / 2 + 4) + '"><tspan style="fill:var(--v-text);font-weight:700">' + (l.atPeak == null ? '–' : NF1.format(l.atPeak) + ' kW') + '</tspan>' + (narrow ? '' : ' · ' + kwh(l.kwh) + ' kWh') + '</text>';
+                if (all && l.drill) s += '<rect class="hit" data-ls="' + esc(l.drill) + '" x="0" y="' + ly + '" width="' + (L - 4) + '" height="' + laneH + '"/>';
+            });
+            if (!all) c.segs.forEach(function (g2) { s += '<rect x="' + x(g2[0]) + '" y="' + y0 + '" width="' + Math.max(1, x(g2[1]) - x(g2[0])) + '" height="' + (yEnd - y0) + '" style="fill:var(--v-lim)" fill-opacity=".12"/>'; });
+            if (c.peak) { var px = x(c.peak.m + 0.5), py = yT(c.peak.kw); s += '<line x1="' + px + '" x2="' + px + '" y1="' + py + '" y2="' + yEnd + '" style="stroke:var(--v-text);stroke-opacity:.4;stroke-dasharray:2 3"/><circle cx="' + px + '" cy="' + py + '" r="4" style="fill:var(--v-text);stroke:var(--v-bg);stroke-width:2"/>'; }
+            var stp = pw < 260 ? 12 : pw < 480 ? 6 : 3;
+            for (var hh = 0; hh <= 24; hh += stp) { var dt = ts(c.day); dt.setHours(hh, 0, 0, 0); s += '<text x="' + x((dt.getTime() / 1000 - c.day) / 60) + '" y="' + (yEnd + 16) + '" text-anchor="' + (hh === 0 ? 'start' : hh === 24 ? 'end' : 'middle') + '">' + p2(hh % 24) + ':00</text>'; }
+            s += '<line class="xh" x1="0" x2="0" y1="' + T + '" y2="' + yEnd + '" visibility="hidden"/>';
+            el.innerHTML = s + '</svg>';
+            var svg = el.firstChild, xh = svg.querySelector('.xh');
+            el.onmousemove = function (ev) {
+                var t = ev.target; if (t.classList && t.classList.contains('hit')) { placeTip(ev, '<b>' + esc(t.getAttribute('data-ls').split(':')[1] || '') + '</b><div class="m">Klicken: Lastverlauf je Ladepunkt</div>'); return; }
+                var rb = svg.getBoundingClientRect(), sx = (ev.clientX - rb.left) * Wd / rb.width, mm = Math.floor((sx - L) / pw * c.len);
+                if (sx < L || sx > L + pw || mm >= n || mm < 0) { xh.setAttribute('visibility', 'hidden'); hideTip(); return; }
+                xh.setAttribute('x1', x(mm + 0.5)); xh.setAttribute('x2', x(mm + 0.5)); xh.setAttribute('visibility', 'visible');
+                var h = '<b>' + hm(c.day + mm * 60) + ' Uhr · ' + NF1.format(tot[mm]) + ' kW</b>', on = lanes.filter(function (k) { return k.v[mm] > 0.05 || stAt(k.l.st, mm); }), nl = 0, nb = 0, nn = 0;
+                on.sort(function (a, b) { return b.v[mm] - a.v[mm]; });
+                on.forEach(function (k) {
+                    var sv = stAt(k.l.st, mm), v = k.v[mm] > 0.05 ? NF1.format(k.v[mm]) + ' kW' : sv === 1 && !all ? 'steckt, 0 kW' : '0 kW';
+                    if (all) { var oc = occAt(k.l.occ, mm), pp = []; if (oc[0]) pp.push(oc[0] + ' lädt'); if (oc[1]) pp.push(oc[1] + ' steckt'); if (pp.length) v += ' · ' + pp.join(', '); }
+                    h += '<div class="r"><span><i style="background:' + ser(k.l.slot) + '"></i>' + esc(k.l.name) + '</span><span>' + v + '</span></div>';
+                });
+                lanes.forEach(function (k) { if (all) { var oc = occAt(k.l.occ, mm); nl += oc[0]; nb += oc[1]; nn += k.l.n || 0; } else { var sv = stAt(k.l.st, mm); nl += sv === 2 ? 1 : 0; nb += sv === 1 ? 1 : 0; nn++; } });
+                if (!on.length) h += '<div class="m">' + (all ? 'kein Standort lädt' : 'keine Wallbox lädt') + '</div>';
+                h += '<div class="m">' + nl + ' lädt · ' + nb + ' angesteckt ohne Laden · ' + Math.max(0, nn - nl - nb) + ' frei</div>';
+                c.segs.forEach(function (g2) { if (mm >= g2[0] && mm < g2[1]) h += '<div class="w">▲ am ' + esc(lbl) + ' ' + hm(c.day + g2[0] * 60) + '–' + hm(c.day + g2[1] * 60) + ' Uhr</div>'; });
+                placeTip(ev, h);
+            };
+            el.onmouseleave = function () { xh.setAttribute('visibility', 'hidden'); hideTip(); };
+            el.onclick = function (ev) { var t = ev.target; if (t.classList && t.classList.contains('hit') && t.getAttribute('data-ls')) { pendingDay = c.day; setView({ scope: t.getAttribute('data-ls') }); } };
+        }
+
+        // =====================================================================
+        // Ladevorgänge (Etappe 1: Kennzahlen aus dem Bericht)
+        // =====================================================================
+        function tSes(g, d) {
+            var k = d.kpi, det = k.ses != null;
+            var kp = [['Ladevorgänge', det ? NF0.format(k.ses) : '–', '', det ? (d.unit === 'Tag' ? 'im Zeitraum' : 'im Zeitraum') : noDetail(d)],
+                ['Ø Energie', k.avgKwh == null ? '–' : kwh(k.avgKwh), k.avgKwh == null ? '' : 'kWh', 'je Ladevorgang'],
+                ['Ø Standzeit', durH(k.avgDur), '', 'vom Anstecken bis zum Abstecken'],
+                ['Ø davon lädt', k.avgDur != null && k.occ && k.load != null ? durH(k.avgDur * k.load / k.occ) : '–', '', 'Rest: steht ohne zu laden']];
+            kp.forEach(function (x) { card(g, 'c3 v2-kpi static', '<div class="l"><span>' + x[0] + '</span></div><div class="v">' + x[1] + '<small>' + x[2] + '</small></div><div class="s">' + x[3] + '</div>'); });
+            if (k.occ && k.load != null) {
+                var a = k.load / k.occ;
+                card(g, '', '<div class="v2-ch"><h4>Wie die Standzeit genutzt wird</h4><span class="m">Anteil an der belegten Zeit</span></div><div class="v2-bar2" style="height:22px;border-radius:7px"><i style="width:' + (a * 100).toFixed(1) + '%;background:var(--v-acc)"></i><i class="v2-h" style="width:' + ((1 - a) * 100).toFixed(1) + '%"></i></div>' +
+                    '<div class="v2-lg"><span><i style="background:var(--v-acc)"></i>lädt ' + pct(a) + (k.avgDur != null ? ' (Ø ' + durH(k.avgDur * a) + ')' : '') + '</span><span><i class="hh"></i>steht ohne Laden ' + pct(1 - a) + (k.avgDur != null ? ' (Ø ' + durH(k.avgDur * (1 - a)) + ')' : '') + '</span></div>');
+            }
+            var rows = d.rows.filter(function (r) { return r.ses; }).sort(function (a2, b) { return b.ses - a2.ses; }), mx = rows.length ? rows[0].ses : 1;
+            if (rows.length) card(g, '', '<div class="v2-ch"><h4>Ladevorgänge je ' + (d.scope.level === 'all' ? 'Standort' : 'Ladepunkt') + '</h4></div><div class="v2-tbl"><table style="min-width:0"><thead><tr><th></th><th>Vorgänge</th><th>Ø Energie</th><th>Ø Standzeit</th></tr></thead><tbody>' + rows.map(function (r) {
+                return '<tr' + (r.drill ? ' data-drill="' + esc(r.drill) + '"' : '') + '><td>' + esc(r.label) + '</td><td>' + r.ses + '<span class="v2-tbar"><i style="width:' + (r.ses / mx * 100).toFixed(1) + '%;background:var(--v-acc)"></i></span></td><td>' + kwh(r.avgKwh) + ' kWh</td><td>' + durH(r.avgDur) + '</td></tr>';
+            }).join('') + '</tbody></table></div>');
+            soon(g, '<b>Mit dem nächsten Update:</b> Liste aller Ladevorgänge (Beginn, Ende, Energie, Ladezeit, Standzeit ohne Laden, gedrosselt ja/nein) sowie Verteilungen von Ankunftszeit, Energie und Standzeit.');
+        }
+
+        // =====================================================================
+        // Ladepunkte
+        // =====================================================================
+        function tPts(g, d) {
+            var all = d.scope.level === 'all', s = st.ptSort, T = sum(d.rows.map(function (r) { return r.kwh; })) || 1;
+            var cols = [{ k: 'label', l: all ? 'Standort' : 'Ladepunkt' }, { k: 'kwh', l: 'Energie' }, { k: 'share', l: 'Anteil' }, { k: 'ses', l: 'Vorgänge' }, { k: 'avgKwh', l: 'Ø kWh' }, { k: 'avgDur', l: 'Ø Standzeit' }, { k: 'occ', l: 'Auslastung' }];
+            var rows = d.rows.map(function (r) { var o = Object.assign({}, r); o.share = r.kwh / T; return o; });
+            rows.sort(function (a, b) { if (s.col === 'label') return s.dir * a.label.localeCompare(b.label); var x = a[s.col], y = b[s.col]; return s.dir * ((x == null ? -1 : x) - (y == null ? -1 : y)); });
+            var mx = Math.max.apply(null, rows.map(function (r) { return r.kwh; }).concat([0.001])), k = d.kpi;
+            var c = card(g, '', '<div class="v2-ch"><h4>' + (all ? 'Standorte' : 'Ladepunkte') + '</h4><span class="m">' + (all || d.scope.level === 'site' ? 'Zeile anklicken: ' + (all ? 'Standort' : 'Säule') + ' öffnen · ' : '') + 'Spaltenkopf: sortieren</span></div><div class="v2-tbl"><table><thead><tr>' + cols.map(function (cc) {
+                var on = s.col === cc.k; return '<th data-k="' + cc.k + '"' + (on ? ' aria-sort="' + (s.dir < 0 ? 'descending' : 'ascending') + '"' : '') + '>' + cc.l + (on ? (s.dir < 0 ? ' ↓' : ' ↑') : '') + '</th>';
+            }).join('') + '</tr></thead><tbody>' + rows.map(function (r) {
+                var l = r.load == null ? 0 : r.load;
+                return '<tr' + (r.drill ? ' data-drill="' + esc(r.drill) + '" tabindex="0"' : '') + '><td><b>' + esc(r.label) + '</b>' + (r.sub ? '<span class="sub">' + esc(r.sub) + '</span>' : '') + '</td><td>' + kwh(r.kwh) + ' kWh<span class="v2-tbar"><i style="width:' + (r.kwh / mx * 100).toFixed(1) + '%;background:var(--v-acc)"></i></span></td><td>' + pct(r.share) + '</td><td>' + (r.ses == null ? '–' : r.ses) + '</td><td>' + kwh(r.avgKwh) + '</td><td>' + durH(r.avgDur) + '</td>' +
+                    '<td>' + pct(r.occ) + (r.occ == null ? '' : '<span class="v2-tbar"><i style="width:' + (l * 100).toFixed(1) + '%;background:var(--v-acc)"></i><i class="v2-h" style="width:' + (Math.max(0, r.occ - l) * 100).toFixed(1) + '%"></i></span>') + '</td></tr>';
+            }).join('') + '</tbody><tfoot><tr><td>Summe</td><td>' + kwh(T) + ' kWh</td><td>100 %</td><td>' + (k.ses == null ? '–' : k.ses) + '</td><td>' + kwh(k.avgKwh) + '</td><td>' + durH(k.avgDur) + '</td><td>' + pct(k.occ) + '</td></tr></tfoot></table></div>' +
+                '<div class="v2-lg"><span>Auslastung:</span><span><i style="background:var(--v-acc)"></i>lädt aktiv</span><span><i class="hh"></i>angesteckt, lädt nicht</span></div>');
+            c.querySelectorAll('th').forEach(function (th) { th.onclick = function (e) { e.stopPropagation(); var kk = th.getAttribute('data-k'); if (s.col === kk) s.dir = -s.dir; else { s.col = kk; s.dir = kk === 'label' ? 1 : -1; } render(); }; });
+            soon(g, '<b>Mit dem nächsten Update:</b> Ladepunkt anklicken für Details: Belegungskalender (jeder Tag von 0 bis 24 Uhr), Ladevorgänge und Mini-Verlauf je Ladepunkt.');
+        }
+
+        // ---------- Bedienung ----------
+        $('v2_per').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setView({ type: b.getAttribute('data-p'), off: 0 }); });
+        $('v2_prev').addEventListener('click', function () { setView({ off: view.off - 1 }); });
+        $('v2_next').addEventListener('click', function () { if (view.off < 0) setView({ off: view.off + 1 }); });
+        $('v2_scope').addEventListener('change', function () { setView({ scope: this.value }); });
+        $('v2_tabs').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) go(b.getAttribute('data-t')); });
+        $('v2_csv').addEventListener('click', function () { var p = $('v2_csvp'); p.hidden = !p.hidden; this.setAttribute('aria-expanded', String(!p.hidden)); });
+        $('v2_csvmake').addEventListener('click', function () {
+            var r = root.querySelector('input[name="v2_csvmode"]:checked');
+            $('v2_csvlink').hidden = true; $('v2_csvmsg').textContent = 'Datei wird erzeugt …';
+            ask('Csv', Object.assign({}, view, { mode: r ? r.value : 'summen' }));
+        });
+        root.addEventListener('click', function (e) {
+            var b = e.target.closest('[data-scope]'); if (b && root.contains(b)) { setView({ scope: b.getAttribute('data-scope') }); return; }
+            var tr = e.target.closest('tr[data-drill]'); if (tr && root.contains(tr)) { setView({ scope: tr.getAttribute('data-drill') }); }
+        });
+        root.addEventListener('keydown', function (e) { if (e.key !== 'Enter') return; var tr = e.target.closest && e.target.closest('tr[data-drill]'); if (tr) setView({ scope: tr.getAttribute('data-drill') }); });
+        var pend = false, lastW = 0;
+        function redraw() { if (!data || root.clientWidth === 0) return; if (Math.abs(root.clientWidth - lastW) < 2) return; lastW = root.clientWidth; render(); }
+        try { new ResizeObserver(function () { if (pend) return; pend = true; requestAnimationFrame(function () { pend = false; redraw(); }); }).observe(root); } catch (e) { window.addEventListener('resize', redraw); }
+
+        // ---------- Nachrichten vom Modul (nur mit eigener Kennung) ----------
+        function parse(m, depth) {
+            depth = depth || 0; if (depth > 3) return null;
+            if (typeof m === 'string') { try { m = JSON.parse(m); } catch (e) { return null; } return parse(m, depth + 1); }
+            if (!m || typeof m !== 'object') return null;
+            if (m.ev === 'report' || m.ev === 'csv' || m.ev === 'day') return m;
+            var keys = ['data', 'value', 'payload'];
+            for (var i = 0; i < keys.length; i++) if (m[keys[i]] !== undefined) return parse(m[keys[i]], depth + 1);
+            return null;
+        }
+        function onMessage(raw) {
+            var m = parse(raw);
+            if (!m || !m.cid || m.cid !== cid) return;
+            root.classList.remove('busy');
+            if (m.ev === 'report' && m.data && Array.isArray(m.data.energy)) {
+                data = m.data; view = { type: m.data.type, off: m.data.off, scope: m.data.scope.value };
+                if (pendingDay != null) { var pd = pendingDay; pendingDay = null; askDay(pd); } else { dayOpen = false; day = null; }
+                render();
+            } else if (m.ev === 'day') { day = m.data || null; dayOpen = true; if (tab === 'power') render(); }
+            else if (m.ev === 'csv') {
+                var a = $('v2_csvlink');
+                if (m.url) { a.href = m.url; a.hidden = false; $('v2_csvmsg').textContent = (m.lines != null ? m.lines + ' Zeilen · ' : '') + 'Link gilt 5 Minuten.'; }
+                else { a.hidden = true; $('v2_csvmsg').textContent = m.error || 'Die Datei konnte nicht erzeugt werden.'; }
+            }
+        }
+        // Mit der klassischen Ansicht in derselben Kachel: beide Empfänger aufrufen, jeder prüft seine Kennung
+        var prevHandle = window.handleMessage;
+        window.handleMessage = function (raw) { if (typeof prevHandle === 'function') { try { prevHandle(raw); } catch (e) { } } try { onMessage(raw); } catch (e) { } };
+        window.EV2 = { shown: function () { lastW = 0; redraw(); } };
+        try { new MutationObserver(function () { if (data && root.clientWidth) render(); }).observe(document.head, { childList: true, subtree: true, characterData: true }); } catch (e) { }
+
+        var init = %%INITIAL%%;
+        if (init && init.ev === 'report' && init.data) { data = init.data; view = { type: data.type, off: data.off, scope: data.scope.value }; render(); }
+    })();
+</script>

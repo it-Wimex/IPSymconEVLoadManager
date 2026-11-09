@@ -4,6 +4,14 @@
         {
             "type": "ExpansionPanel", "caption": "Einstellungen", "expanded": true,
             "items": [
+                {
+                    "type": "Select", "name": "Layout", "caption": "Darstellung der Kachel",
+                    "options": [
+                        { "caption": "Umschaltbar: klassisch, neue Ansicht per Schalter in der Kachel", "value": 2 },
+                        { "caption": "Klassisch", "value": 0 },
+                        { "caption": "Neue Ansicht (Vorschau)", "value": 1 }
+                    ]
+                },
                 { "type": "Label", "caption": "Geschäftszeiten Montag bis Freitag, für die Kennzahl „Auslastung zu Geschäftszeiten“." },
                 { "type": "NumberSpinner", "name": "BizFrom", "caption": "von", "suffix": " Uhr", "minimum": 0, "maximum": 23 },
                 { "type": "NumberSpinner", "name": "BizTo", "caption": "bis", "suffix": " Uhr", "minimum": 1, "maximum": 24 },
